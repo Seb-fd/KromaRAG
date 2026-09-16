@@ -27,18 +27,32 @@ declare module "next-auth" {
 /** next-auth beta ships no "next-auth/jwt" type entry — carry roles via a structural cast. */
 type TokenWithRoles = { roles?: string[]; provider?: string };
 
-const AUTH_SECRET = process.env.AUTH_SECRET ?? "dev-only-insecure-secret-change-me";
+const AUTH_SECRET =
+  process.env.AUTH_SECRET ?? "dev-only-insecure-secret-change-me";
 const ISSUER = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
 
 if (!process.env.AUTH_SECRET) {
   if (process.env.NODE_ENV === "production") {
-    throw new Error("[auth] AUTH_SECRET is missing — set it in apps/web/.env.local to match apps/api/.env");
+    throw new Error(
+      "[auth] AUTH_SECRET is missing — set it in apps/web/.env.local to match apps/api/.env",
+    );
   }
-  console.warn("[auth] AUTH_SECRET missing — using dev fallback. Create apps/web/.env.local matching apps/api/.env or chat/SSE will 401.");
+  console.warn(
+    "[auth] AUTH_SECRET missing — using dev fallback. Create apps/web/.env.local matching apps/api/.env or chat/SSE will 401.",
+  );
 }
 
-async function mintApiToken(args: { sub: string; email?: string | null; name?: string | null; roles: string[] }): Promise<string> {
-  return await new jose.SignJWT({ email: args.email ?? undefined, name: args.name ?? undefined, roles: args.roles })
+async function mintApiToken(args: {
+  sub: string;
+  email?: string | null;
+  name?: string | null;
+  roles: string[];
+}): Promise<string> {
+  return await new jose.SignJWT({
+    email: args.email ?? undefined,
+    name: args.name ?? undefined,
+    roles: args.roles,
+  })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(args.sub)
     .setIssuer(ISSUER)
@@ -65,19 +79,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             id: "credentials",
             name: "Demo access",
             credentials: {
-              email: { label: "Email", type: "email", placeholder: "sebastian@kromarag.com" },
+              email: {
+                label: "Email",
+                type: "email",
+                placeholder: "admin@kromarag.com",
+              },
               role: { label: "Role", type: "text" },
             },
             authorize: async (creds) => {
-              const email = String(creds?.email ?? "").trim().toLowerCase();
+              const email = String(creds?.email ?? "")
+                .trim()
+                .toLowerCase();
               const role = String(creds?.role ?? "viewer");
-              if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !isRole(role)) return null;
-              return { id: `demo|${email}`, email, name: email.split("@")[0], roles: [role] };
+              if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !isRole(role))
+                return null;
+              return {
+                id: `demo|${email}`,
+                email,
+                name: email.split("@")[0],
+                roles: [role],
+              };
             },
           }),
         ]),
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
-      ? [Google({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET })]
+      ? [
+          Google({
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          }),
+        ]
       : []),
   ],
   callbacks: {
@@ -85,7 +116,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const t = token as typeof token & TokenWithRoles;
       if (user) {
         t.sub = user.id;
-        t.roles = user.roles && user.roles.length > 0 ? user.roles.filter(isRole) : ["viewer"];
+        t.roles =
+          user.roles && user.roles.length > 0
+            ? user.roles.filter(isRole)
+            : ["viewer"];
         if (account?.provider) t.provider = account.provider;
       }
       // Roles for demo users are the source of truth at sign-in; OAuth users stay viewer
@@ -105,7 +139,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           roles: session.user.roles,
         });
       } catch (e) {
-        console.error("[auth] mintApiToken failed — Authorization header will be missing:", e);
+        console.error(
+          "[auth] mintApiToken failed — Authorization header will be missing:",
+          e,
+        );
         session.accessToken = undefined;
       }
       return session;

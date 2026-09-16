@@ -52,7 +52,7 @@ export function Sidebar() {
     setSwitching(true);
     try {
       const res = await signIn("credentials", {
-        email: session?.user?.email ?? "sebastian@kromarag.com",
+        email: session?.user?.email ?? "admin@kromarag.com",
         role: r,
         redirect: false,
       });

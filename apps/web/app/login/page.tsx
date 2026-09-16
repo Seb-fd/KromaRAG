@@ -6,7 +6,7 @@ import { signIn } from "next-auth/react";
 import { KROMA_ROLES, type KromaRole } from "@/lib/roles";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("sebastian@kromarag.com");
+  const [email, setEmail] = useState("admin@kromarag.com");
   const [role, setRole] = useState<KromaRole>("viewer");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -64,7 +64,7 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="surface w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-kroma-500"
-            placeholder="sebastian@kromarag.com"
+            placeholder="admin@kromarag.com"
           />
         </div>
         <fieldset className="space-y-2">
