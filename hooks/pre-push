@@ -10,7 +10,7 @@ npm run spec:check
 
 echo "kroma pre-push: 2/4 api pytest"
 if command -v uv >/dev/null 2>&1; then
-  uv run --project apps/api pytest -q
+  (cd apps/api && uv run pytest -q)
 else
   PYTHONPATH=apps/api python -m pytest apps/api/tests -q
 fi

@@ -1,0 +1,16 @@
+title = "KromaRAG gitleaks config"
+
+# Extend the default ruleset (do not fork it) — see
+# https://github.com/gitleaks/gitleaks#configuration
+[extend]
+useDefault = true
+
+# Docs prose in README §12.2 describes the spec-gate checks
+# (env names + contract tokens on one line) and trips the
+# generic-api-key rule. Scoped to that single docs line so real
+# key leaks anywhere else still fail CI.
+[allowlist]
+description = "README spec-gate prose false-positives generic-api-key"
+paths = ['''README\.md$''']
+regexTarget = "line"
+regexes = ['''check-specs\.js.*enforces''']

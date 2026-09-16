@@ -122,51 +122,51 @@ Verified against `specs/01-system-architecture.md §1–§2`, `app/main.py`, `ap
 ```mermaid
 flowchart LR
     subgraph WEB["apps/web — Next.js (Vercel)"]
-        UI[Chat UI / Upload<br/>SSE reader]
-        AUTH[Auth.js v5<br/>JWT iss/aud/exp<br/>roles[]]
+        UI["Chat UI / Upload<br/>SSE reader"]
+        AUTH["Auth.js v5<br/>JWT iss/aud/exp<br/>roles[]"]
     end
 
     subgraph API["apps/api — FastAPI async (Cloud Run)"]
-        SEC[get_current_principal<br/>require_role<br/>JWKS + HS256]
-        RL[RateLimit + SecurityHeaders<br/>CORS exact allowlist]
-        LG[LangGraph<br/>router → retriever → reranker<br/>→ generator → guardrail → evaluator]
-        RET[hybrid_search tool<br/>0.7 cosine + 0.3 ts_rank]
-        LLM[generate_with_fallback<br/>timeout 25s]
-        CONV[conversations<br/>threads + history]
-        DOCSAPI[documents lifecycle<br/>upload/patch/reindex/purge]
-        MET[GET /metrics<br/>admin + allowlist]
+        SEC["get_current_principal<br/>require_role<br/>JWKS + HS256"]
+        RL["RateLimit + SecurityHeaders<br/>CORS exact allowlist"]
+        LG["LangGraph<br/>router → retriever → reranker<br/>→ generator → guardrail → evaluator"]
+        RET["hybrid_search tool<br/>0.7 cosine + 0.3 ts_rank"]
+        LLM["generate_with_fallback<br/>timeout 25s"]
+        CONV["conversations<br/>threads + history"]
+        DOCSAPI["documents lifecycle<br/>upload/patch/reindex/purge"]
+        MET["GET /metrics<br/>admin + allowlist"]
     end
 
     subgraph DB["Postgres + pgvector (Neon)"]
-        DOCS[(kroma_documents<br/>status: pending/indexing/indexed/failed/archived)]
-        CHUNKS[(kroma_chunks<br/>VECTOR 768 + tsvector<br/>ivfflat + GIN)]
-        RBAC[(kroma_roles<br/>kroma_user_roles<br/>kroma_document_roles)]
-        CONV[(kroma_conversations<br/>kroma_messages)]
+        DOCS[("kroma_documents<br/>status: pending/indexing/indexed/failed/archived")]
+        CHUNKS[("kroma_chunks<br/>VECTOR 768 + tsvector<br/>ivfflat + GIN")]
+        RBAC[("kroma_roles<br/>kroma_user_roles<br/>kroma_document_roles")]
+        CONVDB[("kroma_conversations<br/>kroma_messages")]
     end
 
     subgraph EXT["Providers"]
-        GEM[Gemini API<br/>primary: gemini-3.6-flash<br/>embed: gemini-embedding-001]
-        GROQ[Groq API<br/>fallback: openai/gpt-oss-120b]
-        LS[LangSmith<br/>project KromaRAG]
+        GEM["Gemini API<br/>primary: gemini-3.6-flash<br/>embed: gemini-embedding-001"]
+        GROQ["Groq API<br/>fallback: openai/gpt-oss-120b"]
+        LS["LangSmith<br/>project KromaRAG"]
     end
 
-    UI -- POST /api/v1/query<br/>Bearer JWT<br/>Accept: text/event-stream --> SEC
-    UI -- POST /api/v1/ingest editor+<br/>POST /documents/upload<br/>GET /documents, /conversations --> SEC
-    AUTH -- JWKS /.well-known/jwks.json<br/>HS256 AUTH_SECRET --> SEC
+    UI -- "POST /api/v1/query<br/>Bearer JWT<br/>Accept: text/event-stream" --> SEC
+    UI -- "POST /api/v1/ingest editor+<br/>POST /documents/upload<br/>GET /documents, /conversations" --> SEC
+    AUTH -- "JWKS /.well-known/jwks.json<br/>HS256 AUTH_SECRET" --> SEC
     SEC --> RL
     RL --> LG
     LG --> RET
-    RET -- asyncpg<br/>RBAC WHERE<br/>probes=10 --> CHUNKS
-    RET -- RBAC check --> DOCS
-    RET -- role join --> RBAC
+    RET -- "asyncpg<br/>RBAC WHERE<br/>probes=10" --> CHUNKS
+    RET -- "RBAC check" --> DOCS
+    RET -- "role join" --> RBAC
     LG --> LLM
-    LLM -- primary --> GEM
-    LLM -- timeout/429/404/5xx --> GROQ
-    LG -. background trace<br/>trace_id, usage, scores .-> LS
-    LG -- SSE source/token/done<br/>X-Trace-Id + traceparent --> UI
+    LLM -- "primary" --> GEM
+    LLM -- "timeout/429/404/5xx" --> GROQ
+    LG -. "background trace<br/>trace_id, usage, scores" .-> LS
+    LG -- "SSE source/token/done<br/>X-Trace-Id + traceparent" --> UI
     LG --> CONV
     DOCSAPI --> DOCS
-    MET -. scrape<br/>admin JWT + allowlist .-> UI
+    MET -. "scrape<br/>admin JWT + allowlist" .-> UI
 ```
 
 **Data flows (`specs/01 §2`, extended by `06 §4`, `07 §4`, `09 §3.1`):**
@@ -445,7 +445,10 @@ Copy-Item apps/web/.env.local.example apps/web/.env.local
 # Prod: AUTH_SECRET_CURRENT (sign) + AUTH_SECRET_PREVIOUS (verify overlap) + JWT_ISSUER=https://kromarag.vercel.app
 ```
 
-`scripts/check-specs.js` enforces: `DATABASE_URL` must be generic `postgresql+asyncpg://`, no `SUPABASE_*` keys, `02-api-contracts.md` must define `"sub"`, `"roles"`, `JWT_ISSUER`, `get_current_principal`, plus `06` (`conv_id`, `HISTORY_MAX_TURNS`), `07` (`reindex`, `archived`, `003`), `08` (`/healthz`, `RATE_LIMITED`, `AUTH_SECRET_CURRENT`, …), `09` (`traceparent`, `/metrics`, `k6`, …) deltas.
+`scripts/check-specs.js` enforces the SDD gate for specs `01`–`09`:
+generic driver URL in `.env.example`, no provider-specific keys,
+required JWT claims and principal helper, plus the `06`–`09` deltas
+(history caps, lifecycle states, health probes, tracing and metrics).
 
 ### 12.3 Database (Neon / any Postgres + pgvector)
 

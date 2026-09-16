@@ -8,6 +8,9 @@
 # - Docker context must be apps/api (Dockerfile copies app/, migrations/, scripts/).
 # - Trivy/k6 are intentionally NOT required here (nightly/staging); gitleaks
 #   scans the PR diff to avoid flagging ancient history on day one.
+# - All JS actions run on Node 24 (checkout@v6, setup-node@v6,
+#   setup-python@v6, setup-uv@v7, buildx@v4, gitleaks@v3). Do not
+#   downgrade — Node 20 was removed from runners in Sept 2026.
 
 name: CI
 
@@ -26,8 +29,8 @@ jobs:
     name: spec:check (SDD gate)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
@@ -37,15 +40,17 @@ jobs:
   api-tests:
     name: api pytest
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
     defaults:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev
       - run: uv run pytest -q
 
@@ -53,8 +58,8 @@ jobs:
     name: web lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
@@ -69,8 +74,8 @@ jobs:
       NEXTAUTH_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
@@ -81,17 +86,17 @@ jobs:
     name: docker build (api)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
       - run: docker build -f apps/api/Dockerfile apps/api
 
   secrets-scan:
     name: gitleaks (PR diff)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
