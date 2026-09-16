@@ -22,7 +22,7 @@ upload/URL → mime-validate → extract text → clean → semantic chunk → G
 
 ## 3. Embeddings
 
-- Model: `text-embedding-004`, dim `768` (`PGVECTOR_DIM`). Batch embed, retry 3× exponential.
+- Model: `gemini-embedding-001` (live), dim `768` (`PGVECTOR_DIM`). Legacy retired: `text-embedding-004` (404 `NOT_FOUND` on `v1beta` as of 2026; see `reembed.py`). Batch embed, retry 3× exponential.
 - Query embedding cached in-memory (LRU 500, TTL 10 min) keyed by normalized query.
 
 ## 4. Hybrid Retrieval SQL (RBAC-enforced)
@@ -55,7 +55,7 @@ Graph: `router → retriever → reranker → generator → guardrail`. State: `
 router: if greeting/smalltalk → generator(direct) else retriever
 retriever: embed query → hybrid SQL (§4) → chunks
 reranker: sort/filter, attach citations
-generator: Gemini 3.6-flash (system: cite [doc:title:ord]); on timeout/429/404-NOT_FOUND → Groq llama-3.3-70b
+generator: Gemini 3.6-flash (system: cite [doc:title:ord]); on timeout/429/404-NOT_FOUND → Groq openai/gpt-oss-120b (legacy fallback name: llama-3.3-70b)
 guardrail: if no chunks → "I don't have evidence in your accessible docs."; PII redact; return SSE
 ```
 

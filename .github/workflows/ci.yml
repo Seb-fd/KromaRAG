@@ -1,0 +1,97 @@
+# KromaRAG CI — required green suite (specs SDD gate + API + Web + Docker + secrets).
+# Triggers on push/PR to main. All jobs are required in branch protection.
+# Design notes (see README §15):
+# - Python 3.12 to match apps/api/Dockerfile (python:3.12-slim), not latest.
+# - uv sync UNFROZEN: uv.lock is gitignored, so --frozen would fail in CI.
+# - Web build needs a dummy AUTH_SECRET: apps/web/auth.ts throws in
+#   production (NODE_ENV=production during `next build`) when it is missing.
+# - Docker context must be apps/api (Dockerfile copies app/, migrations/, scripts/).
+# - Trivy/k6 are intentionally NOT required here (nightly/staging); gitleaks
+#   scans the PR diff to avoid flagging ancient history on day one.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  spec-check:
+    name: spec:check (SDD gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run spec:check
+
+  api-tests:
+    name: api pytest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --extra dev
+      - run: uv run pytest -q
+
+  web-lint:
+    name: web lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx --workspace apps/web eslint . --max-warnings=0
+
+  web-build:
+    name: web build
+    runs-on: ubuntu-latest
+    env:
+      AUTH_SECRET: ci-dummy-32-chars-minimum-0123456789
+      NEXTAUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace apps/web
+
+  docker:
+    name: docker build (api)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -f apps/api/Dockerfile apps/api
+
+  secrets-scan:
+    name: gitleaks (PR diff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

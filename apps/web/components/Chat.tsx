@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useSession } from "next-auth/react";
 import { streamQuery } from "@/lib/api-client";
@@ -61,7 +61,7 @@ export function Chat() {
 
   const streaming =
     phase === "searching" || phase === "reranking" || phase === "synthesizing";
-  const messages = active?.messages ?? [];
+  const messages = useMemo(() => active?.messages ?? [], [active]);
 
   useEffect(() => {
     const el = scrollRef.current;

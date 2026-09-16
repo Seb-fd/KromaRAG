@@ -12,7 +12,7 @@
 ## 2. Cost & Token Metrics
 
 - Capture from provider response: `prompt_tokens`, `completion_tokens`, `model`. Emit in SSE `done.usage`.
-- Cost table (config, update quarterly): `gemini-3.6-flash $1.50/$7.50 per 1M` (legacy `gemini-2.0-flash $0.10/$0.40 per 1M` kept), `groq llama-3.3-70b $0.59/$0.79 per 1M`, `text-embedding-004 $0.02 per 1M tokens` (indicative — pin in `apps/api/app/core/costs.py`).
+- Cost table (config, update quarterly — pinned in `apps/api/app/core/costs.py`): live `gemini-3.6-flash $1.50/$7.50 per 1M`, `openai/gpt-oss-120b $0.15/$0.60`, `gemini-embedding-001 $0.02 per 1M tokens` (indicative); legacy rows retained for history: `gemini-2.0-flash $0.10/$0.40 per 1M`, `groq llama-3.3-70b $0.59/$0.79 per 1M`, `text-embedding-004 $0.02 per 1M tokens` (retired).
 - Log per request to `kroma_usage(trace_id, model, prompt_tok, compl_tok, cost_usd, latency_ms)` (Phase 2 table) + stdout JSON for Cloud Run logs. Alert if p95 cost/query > $0.02 or fallback rate > 15%.
 
 ## 3. Evaluation Criteria & Datasets

@@ -1,0 +1,6 @@
+#!/bin/sh
+# KromaRAG pre-commit: fast SDD gate only (keep commits snappy).
+# Full suite runs on pre-push (mirrors CI required jobs).
+set -eu
+echo "kroma pre-commit: npm run spec:check"
+npm run spec:check

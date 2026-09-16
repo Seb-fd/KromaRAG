@@ -11,8 +11,8 @@
 │ Vercel       │  SSE stream  │ Cloud Run/Render │             │ Neon-compatible     │
 └──────┬───────┘              └────┬───┬────┬────┘             └─────────────────────┘
        │ Auth.js                   │   │    │
-       │ JWT (JWKS)                │   │    └──► Groq API (fallback: llama-3.3-70b)
-       └───────────────────────────┘   └───────► Gemini API (primary: 2.0-flash + text-embedding-004)
+       │ JWT (JWKS)                │   │    └──► Groq API (fallback: openai/gpt-oss-120b; legacy: llama-3.3-70b)
+       └───────────────────────────┘   └───────► Gemini API (primary: gemini-3.6-flash + gemini-embedding-001; legacy: 2.0-flash + text-embedding-004)
                                            │
                                            └──► LangSmith (tracing, Prometheus-style token metrics)
 ```
@@ -20,7 +20,7 @@
 - **Frontend:** Next.js App Router, React Server Components for shells, Client Components for chat/SSE. Auth.js v5 session; JWT forwarded as `Authorization: Bearer`.
 - **Backend:** Python 3.12, FastAPI async, Pydantic v2, `asyncpg` pool, `sse-starlette` for streaming. Stateless; scales horizontally on Cloud Run.
 - **DB:** Fully generic Postgres 15+ with `pgvector` extension. Connection **only** via `DATABASE_URL=postgresql+asyncpg://…`. No provider keys. Works on Neon (pooled), Render, self-hosted. See §3.
-- **LLM routing:** Gemini primary (long context, embeddings), Groq fallback on timeout/5xx/rate-limit. Deterministic router in `services/llm_router.py`.
+- **LLM routing:** Gemini primary (`gemini-3.6-flash`, legacy: `2.0-flash`; embeddings `gemini-embedding-001`, legacy retired: `text-embedding-004`), Groq fallback (`openai/gpt-oss-120b`, legacy: `llama-3.3-70b`) on timeout/5xx/rate-limit. Deterministic router in `services/llm_router.py`.
 
 ## 2. Data Flow
 
@@ -58,7 +58,7 @@ CREATE TABLE kroma_chunks (
   ord INT NOT NULL,
   content TEXT NOT NULL,
   content_tsv TSVECTOR GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
-  embedding VECTOR(768) NOT NULL,        -- PGVECTOR_DIM, Gemini text-embedding-004
+  embedding VECTOR(768) NOT NULL,        -- PGVECTOR_DIM, live: gemini-embedding-001 (legacy retired: text-embedding-004)
   token_count INT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );

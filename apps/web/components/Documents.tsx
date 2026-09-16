@@ -74,6 +74,9 @@ const BADGE_STYLES: Record<DocStatus, string> = {
   archived: "bg-zinc-500/15 text-zinc-400",
 };
 
+/** Local UI-only job id (module scope: keeps render pure per react-hooks/purity). */
+const newLocalId = () => Math.random().toString(36).slice(2, 9);
+
 function StatusBadge({ status }: { status: DocStatus }) {
   const busy = status === "pending" || status === "indexing";
   return (
@@ -109,7 +112,8 @@ export function Documents() {
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; pollingRef.current.clear(); };
+    const polling = pollingRef.current;
+    return () => { mountedRef.current = false; polling.clear(); };
   }, []);
 
   const patchJob = (id: string, p: Partial<UploadJob>) =>
@@ -208,7 +212,7 @@ export function Documents() {
       return;
     }
     const jwtAtCall = jwt;
-    const id = Math.random().toString(36).slice(2, 9);
+    const id = newLocalId();
     setJobs((js) => [{ id, label: title, state: "uploading" as const, detail: "Embedding & indexing…", doc_id: null }, ...js].slice(0, 5));
     try {
       const r = await ingestDocument({ title, content, url: docUrl, mime, allowed_roles: shareRoles, jwt: jwtAtCall });
@@ -249,7 +253,7 @@ export function Documents() {
         continue;
       }
       if (f.size > MAX_UPLOAD_BYTES) {
-        const id = Math.random().toString(36).slice(2, 9);
+        const id = newLocalId();
         setJobs((js) => [{ id, label: f.name, state: "error" as const, detail: `File exceeds ${(MAX_UPLOAD_BYTES / 1_048_576).toFixed(0)} MB cap`, doc_id: null }, ...js].slice(0, 5));
         toast(`Upload failed: file exceeds ${(MAX_UPLOAD_BYTES / 1_048_576).toFixed(0)} MB cap`, "error");
         continue;
@@ -258,7 +262,7 @@ export function Documents() {
         toast(`Empty file: ${f.name}`, "error");
         continue;
       }
-      const id = Math.random().toString(36).slice(2, 9);
+      const id = newLocalId();
       setJobs((js) => [{ id, label: f.name, state: "uploading" as const, detail: "0%", doc_id: null }, ...js].slice(0, 5));
       try {
         const r = await uploadDocument({
@@ -316,7 +320,7 @@ export function Documents() {
   async function handleReindex(d: DocumentDetail) {
     if (!jwt) { toast("Sign in first", "error"); return; }
     const jwtAtCall = jwt;
-    const jobId = Math.random().toString(36).slice(2, 9);
+    const jobId = newLocalId();
     markBusy(d.id, true);
     try {
       const r = await reindexDocument(jwtAtCall, d.id, {});
