@@ -1,0 +1,10 @@
+.env
+.env.*
+__pycache__/
+.pytest_cache/
+*.pyc
+node_modules/
+.git/
+.gitignore
+Dockerfile
+.dockerignore

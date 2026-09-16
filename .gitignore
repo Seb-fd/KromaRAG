@@ -1,0 +1,57 @@
+# ── KromaRAG .gitignore ──
+# Node / Next.js / Vercel
+node_modules/
+.next/
+out/
+dist/
+build/
+*.log
+.vercel
+# npm / yarn / pnpm
+yarn-error.log
+.pnpm-store/
+
+# Python / FastAPI / uv
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.uv/
+uv.lock
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+.env.local
+.env.production
+.env.*.local
+apps/web/.env.local
+apps/api/.env
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Agent skills (generated, do not commit)
+.cursor/skills/
+.codex/skills/
+.opencode/skill/
+.agents/skills/
+skills/npm-*
+CLAUDE.md
+
+# Misc
+coverage/
+.coverage
+coverage.xml
+htmlcov/
+*.sqlite
+*.db
+*.tsbuildinfo
+temp/

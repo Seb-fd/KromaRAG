@@ -1,0 +1,521 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
+import {
+  ApiError,
+  MAX_UPLOAD_BYTES, SUPPORTED_MIMES, archiveDocument, getDocumentStatus, ingestDocument,
+  listDocuments, purgeDocument, reindexDocument, uploadDocument,
+  type DocStatus, type DocumentDetail, type UploadJob,
+} from "@/lib/api-client";
+import { useStore } from "@/lib/store";
+
+const TERMINAL_STATUSES: DocStatus[] = ["indexed", "failed", "archived"];
+const STATUS_FILTERS: (DocStatus | "all")[] = ["all", "indexed", "indexing", "pending", "failed", "archived"];
+const POLL_INTERVAL_MS = 1500;
+const MAX_POLLS = 40;
+
+function mimeForFile(f: File): string {
+  const name = f.name.toLowerCase();
+  if (f.type === "application/pdf" || name.endsWith(".pdf")) return "application/pdf";
+  if (name.endsWith(".md") || name.endsWith(".markdown") || f.type === "text/markdown") return "text/markdown";
+  return "text/plain";
+}
+
+function extAllowed(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.endsWith(".txt") || n.endsWith(".md") || n.endsWith(".markdown") || n.endsWith(".pdf");
+}
+
+/** Best-effort `sub` extraction for UI gating only (server is authoritative). */
+function decodeJwtSub(jwt: string | undefined): string | null {
+  if (!jwt) return null;
+  try {
+    const payload = jwt.split(".")[1];
+    if (!payload) return null;
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    const sub = json?.sub;
+    return typeof sub === "string" && sub ? sub : null;
+  } catch {
+    return null;
+  }
+}
+
+function friendlyDocError(e: unknown): string {
+  if (e instanceof ApiError) {
+    switch (e.code) {
+      case "PAYLOAD_TOO_LARGE":
+        return `File exceeds ${(MAX_UPLOAD_BYTES / 1_048_576).toFixed(0)} MB cap`;
+      case "REINDEX_IN_PROGRESS":
+        return "Reindex already in progress for this doc";
+      case "ARCHIVE_CONFLICT":
+        return "Busy indexing — retry after terminal state";
+      case "NOT_FOUND":
+        return "Not found — deleted or never shared with you";
+      case "FORBIDDEN":
+        return "Forbidden for your role";
+      case "EMBEDDING_MISMATCH":
+      case "VALIDATION":
+        return e.message.slice(0, 140) || "Validation failed";
+      case "API_UNREACHABLE":
+        return "API unreachable — is apps/api running?";
+      default:
+        return e.message.slice(0, 140) || `Request failed (${e.status})`;
+    }
+  }
+  return (e as Error).message?.slice(0, 140) ?? "Upload failed";
+}
+
+const BADGE_STYLES: Record<DocStatus, string> = {
+  indexed: "bg-emerald-500/15 text-emerald-500",
+  indexing: "bg-sky-500/15 text-sky-500",
+  pending: "bg-amber-500/15 text-amber-500",
+  failed: "bg-red-500/15 text-red-500",
+  archived: "bg-zinc-500/15 text-zinc-400",
+};
+
+function StatusBadge({ status }: { status: DocStatus }) {
+  const busy = status === "pending" || status === "indexing";
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${BADGE_STYLES[status] ?? BADGE_STYLES.archived}`}>
+      {busy && <span className="spinner" />}
+      {status}
+    </span>
+  );
+}
+
+/** Document lifecycle (specs/07 §3.3): binary upload + status badges + gated actions. */
+export function Documents() {
+  const { data: session } = useSession();
+  const { toast, canUpload, role } = useStore();
+  const [jobs, setJobs] = useState<UploadJob[]>([]);
+  const [docs, setDocs] = useState<DocumentDetail[]>([]);
+  const [total, setTotal] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const [url, setUrl] = useState("");
+  const [urlTitle, setUrlTitle] = useState("");
+  const [shareRoles, setShareRoles] = useState<string[]>(["viewer"]);
+  const [statusFilter, setStatusFilter] = useState<DocStatus | "all">("all");
+  const [qDraft, setQDraft] = useState("");
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState<Set<string>>(new Set());
+  const fileRef = useRef<HTMLInputElement>(null);
+  const mountedRef = useRef(true);
+  const pollingRef = useRef<Set<string>>(new Set());
+
+  const jwt = session?.accessToken;
+  const mySub = decodeJwtSub(jwt);
+  const isAdmin = role === "admin";
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; pollingRef.current.clear(); };
+  }, []);
+
+  const patchJob = (id: string, p: Partial<UploadJob>) =>
+    setJobs((js) => js.map((j) => (j.id === id ? { ...j, ...p } : j)));
+
+  const markBusy = (id: string, on: boolean) =>
+    setBusy((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id); else next.delete(id);
+      return next;
+    });
+
+  const refresh = useCallback(async () => {
+    if (!jwt) return;
+    try {
+      const r = await listDocuments(jwt, 30, 0, {
+        ...(statusFilter !== "all" ? { status: statusFilter } : { status: "all" as const }),
+        ...(q.trim() ? { q: q.trim() } : {}),
+      });
+      if (!mountedRef.current) return;
+      // Leak-safe: server already RBAC-filters; a 404 here just means nothing visible.
+      setDocs(r.items);
+      setTotal(r.total);
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 404 || e.code === "NOT_FOUND")) {
+        if (mountedRef.current) { setDocs([]); setTotal(0); }
+        return;
+      }
+      /* offline backend — list stays empty, upload errors surface per-job */
+    }
+  }, [jwt, statusFilter, q]);
+
+  // Fetch-on-mount + refetch when the JWT or filters change. Server list is authoritative.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- refresh() only setStates after the async fetch resolves
+  useEffect(() => { refresh(); }, [refresh]);
+
+  // While any visible doc is in-flight, revalidate the list so badges flip without manual refresh.
+  const hasInflight = docs.some((d) => d.status === "pending" || d.status === "indexing");
+  useEffect(() => {
+    if (!hasInflight || !jwt) return;
+    const t = setInterval(() => { refresh(); }, 3000);
+    return () => clearInterval(t);
+  }, [hasInflight, jwt, refresh]);
+
+  const pollUntilTerminal = useCallback(async (
+    docId: string, jobId: string | null, jwtAtCall: string | undefined,
+  ) => {
+    if (!jwtAtCall || pollingRef.current.has(docId)) return;
+    pollingRef.current.add(docId);
+    try {
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        if (!mountedRef.current) return;
+        let s;
+        try {
+          s = await getDocumentStatus(jwtAtCall, docId);
+        } catch (e) {
+          if (e instanceof ApiError && (e.status === 404 || e.code === "NOT_FOUND")) {
+            if (jobId) patchJob(jobId, { state: "error", detail: "Not found — deleted or unshared" });
+            if (mountedRef.current) setDocs((prev) => prev.filter((d) => d.id !== docId));
+            return;
+          }
+          continue; // transient — keep polling
+        }
+        if (jobId) {
+          patchJob(jobId, {
+            state: "indexing",
+            detail: `${s.status} · v${s.version} · ${s.chunks} chunks`,
+            doc_id: docId,
+          });
+        }
+        if ((TERMINAL_STATUSES as string[]).includes(s.status)) {
+          if (jobId) {
+            if (s.status === "indexed") {
+              patchJob(jobId, { state: "done", detail: `${s.chunks} chunks · v${s.version} · indexed` });
+            } else if (s.status === "archived") {
+              patchJob(jobId, { state: "done", detail: `archived · v${s.version}` });
+            } else {
+              patchJob(jobId, { state: "error", detail: (s.error ?? "indexing failed").slice(0, 140) });
+            }
+          }
+          await refresh();
+          return;
+        }
+      }
+      if (jobId) patchJob(jobId, { state: "indexing", detail: "Still indexing — list refreshes automatically" });
+      await refresh();
+    } finally {
+      pollingRef.current.delete(docId);
+    }
+  }, [refresh]);
+
+  async function uploadOne(title: string, content: string | undefined, docUrl: string | undefined, mime: string) {
+    if (!jwt) {
+      toast("Sign in to ingest documents", "error");
+      return;
+    }
+    const jwtAtCall = jwt;
+    const id = Math.random().toString(36).slice(2, 9);
+    setJobs((js) => [{ id, label: title, state: "uploading" as const, detail: "Embedding & indexing…", doc_id: null }, ...js].slice(0, 5));
+    try {
+      const r = await ingestDocument({ title, content, url: docUrl, mime, allowed_roles: shareRoles, jwt: jwtAtCall });
+      if (r.status === "pending" || r.status === "indexing") {
+        patchJob(id, { state: "indexing", detail: `${r.status}…`, doc_id: r.doc_id });
+        toast(`Ingesting “${title}” — polling status…`, "info");
+        await pollUntilTerminal(r.doc_id, id, jwtAtCall);
+      } else {
+        patchJob(id, { state: "done", detail: `${r.chunks} chunks · ${r.status}`, doc_id: r.doc_id });
+        toast(`Ingested “${title}” (${r.chunks} chunks)`, "success");
+      }
+      refresh();
+    } catch (e) {
+      const msg = friendlyDocError(e);
+      patchJob(id, { state: "error", detail: msg });
+      toast(`Upload failed: ${msg}`, "error");
+    }
+  }
+
+  async function handleFiles(files: FileList | File[]) {
+    if (!canUpload) {
+      toast("Ingestion needs the editor role — switch role below", "error");
+      return;
+    }
+    if (!jwt) {
+      toast("Sign in to ingest documents", "error");
+      return;
+    }
+    const jwtAtCall = jwt;
+    for (const f of Array.from(files)) {
+      if (!extAllowed(f.name)) {
+        toast(`Unsupported type: ${f.name} (.txt / .md / .pdf only)`, "error");
+        continue;
+      }
+      const mime = mimeForFile(f);
+      if (!SUPPORTED_MIMES.includes(mime)) {
+        toast(`Unsupported type: ${f.name}`, "error");
+        continue;
+      }
+      if (f.size > MAX_UPLOAD_BYTES) {
+        const id = Math.random().toString(36).slice(2, 9);
+        setJobs((js) => [{ id, label: f.name, state: "error" as const, detail: `File exceeds ${(MAX_UPLOAD_BYTES / 1_048_576).toFixed(0)} MB cap`, doc_id: null }, ...js].slice(0, 5));
+        toast(`Upload failed: file exceeds ${(MAX_UPLOAD_BYTES / 1_048_576).toFixed(0)} MB cap`, "error");
+        continue;
+      }
+      if (f.size === 0) {
+        toast(`Empty file: ${f.name}`, "error");
+        continue;
+      }
+      const id = Math.random().toString(36).slice(2, 9);
+      setJobs((js) => [{ id, label: f.name, state: "uploading" as const, detail: "0%", doc_id: null }, ...js].slice(0, 5));
+      try {
+        const r = await uploadDocument({
+          file: f,
+          title: f.name.replace(/\.[^.]+$/, ""),
+          allowed_roles: shareRoles,
+          jwt: jwtAtCall,
+          onProgress: (pct) => patchJob(id, { detail: `${pct}%` }),
+        });
+        if (r.status === "indexed") {
+          patchJob(id, { state: "done", detail: `${r.chunks} chunks · v1 · indexed`, doc_id: r.doc_id });
+          toast(`Ingested “${f.name}” (${r.chunks} chunks)`, "success");
+          refresh();
+        } else {
+          patchJob(id, { state: "indexing", detail: `${r.status}…`, doc_id: r.doc_id });
+          toast(`Upload accepted — indexing “${f.name}”…`, "info");
+          await pollUntilTerminal(r.doc_id, id, jwtAtCall);
+        }
+      } catch (e) {
+        const msg = friendlyDocError(e);
+        patchJob(id, { state: "error", detail: msg });
+        toast(`Upload failed: ${msg}`, "error");
+      }
+    }
+  }
+
+  async function submitUrl(e: React.FormEvent) {
+    e.preventDefault();
+    if (!url.trim()) return;
+    if (!canUpload) {
+      toast("Ingestion needs the editor role — switch role below", "error");
+      return;
+    }
+    await uploadOne(urlTitle.trim() || url.trim(), undefined, url.trim(), "text/plain");
+    setUrl("");
+    setUrlTitle("");
+  }
+
+  /** (owner_sub == me && editor+) || admin. Empty owner falls back to role gates. */
+  function canManage(d: DocumentDetail): boolean {
+    if (!jwt) return false;
+    if (isAdmin) return true;
+    if (!d.owner_sub) return canUpload;
+    return d.owner_sub === mySub && canUpload;
+  }
+
+  /** Purge needs ownership only (any role) or admin. */
+  function canPurge(d: DocumentDetail): boolean {
+    if (!jwt) return false;
+    if (isAdmin) return true;
+    if (!d.owner_sub) return canUpload;
+    return d.owner_sub === mySub;
+  }
+
+  async function handleReindex(d: DocumentDetail) {
+    if (!jwt) { toast("Sign in first", "error"); return; }
+    const jwtAtCall = jwt;
+    const jobId = Math.random().toString(36).slice(2, 9);
+    markBusy(d.id, true);
+    try {
+      const r = await reindexDocument(jwtAtCall, d.id, {});
+      setJobs((js) => [{ id: jobId, label: `Reindex ${d.title}`, state: "indexing" as const, detail: `v${r.version} indexing…`, doc_id: d.id }, ...js].slice(0, 5));
+      toast(`Reindex started (v${r.version}) — polling status…`, "info");
+      await pollUntilTerminal(d.id, jobId, jwtAtCall);
+    } catch (e) {
+      toast(`Reindex failed: ${friendlyDocError(e)}`, "error");
+    } finally {
+      markBusy(d.id, false);
+    }
+  }
+
+  async function handleArchive(d: DocumentDetail) {
+    if (!jwt) { toast("Sign in first", "error"); return; }
+    markBusy(d.id, true);
+    try {
+      await archiveDocument(jwt, d.id);
+      toast(`Archived “${d.title}”`, "success");
+      refresh();
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 404 || e.code === "NOT_FOUND")) {
+        setDocs((prev) => prev.filter((x) => x.id !== d.id));
+        toast("Not found — deleted or never shared with you", "error");
+      } else {
+        toast(`Archive failed: ${friendlyDocError(e)}`, "error");
+      }
+    } finally {
+      markBusy(d.id, false);
+    }
+  }
+
+  async function handlePurge(d: DocumentDetail) {
+    if (!jwt) { toast("Sign in first", "error"); return; }
+    if (!window.confirm(`Purge “${d.title}” irreversibly? Chunks + shares are deleted (CASCADE).`)) return;
+    markBusy(d.id, true);
+    try {
+      await purgeDocument(jwt, d.id);
+      toast(`Purged “${d.title}”`, "success");
+      setDocs((prev) => prev.filter((x) => x.id !== d.id));
+      setTotal((t) => Math.max(0, t - 1));
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 404 || e.code === "NOT_FOUND")) {
+        setDocs((prev) => prev.filter((x) => x.id !== d.id));
+        toast("Not found — already purged or never shared with you", "error");
+      } else {
+        toast(`Purge failed: ${friendlyDocError(e)}`, "error");
+      }
+    } finally {
+      markBusy(d.id, false);
+    }
+  }
+
+  const toggleShare = (r: string) =>
+    setShareRoles((rs) => (rs.includes(r) ? rs.filter((x) => x !== r) : [...rs, r]));
+
+  return (
+    <div className="space-y-3">
+      {/* Dropzone */}
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+        onClick={() => canUpload && fileRef.current?.click()}
+        className={`rounded-xl border border-dashed p-4 text-center text-xs transition-all ${dragOver ? "border-kroma-500 bg-kroma-500/10" : ""} ${canUpload ? "cursor-pointer hover:border-kroma-500/60" : "opacity-50"}`}
+        style={{ borderColor: dragOver ? undefined : "var(--border)" }}
+        title={canUpload ? "Drop .txt / .md / .pdf files or click to browse" : "Editors+ only"}>
+        <input ref={fileRef} type="file" multiple accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf"
+          className="hidden" onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = ""; }} />
+        <p className="text-lg">📥</p>
+        <p className="font-medium">{canUpload ? "Drop files or browse" : `🔒 Editors only (you: ${role})`}</p>
+        <p className="ink-faint mt-0.5">.txt · .md · .pdf · URL below · ≤{(MAX_UPLOAD_BYTES / 1_048_576).toFixed(0)} MB</p>
+      </div>
+
+      {/* URL ingestion */}
+      <form onSubmit={submitUrl} className="space-y-1.5">
+        <input value={urlTitle} onChange={(e) => setUrlTitle(e.target.value)} placeholder="Title (optional)"
+          className="surface w-full rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-kroma-500" />
+        <div className="flex gap-1.5">
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…"
+            className="surface min-w-0 flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-kroma-500" />
+          <button type="submit" disabled={!canUpload || !url.trim()}
+            className="rounded-lg bg-kroma-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-40">Add</button>
+        </div>
+      </form>
+
+      {/* Share roles */}
+      <div className="flex items-center gap-1.5 text-[11px] ink-soft">
+        <span>Visible to:</span>
+        {["viewer", "editor", "admin"].map((r) => (
+          <button key={r} type="button" onClick={() => toggleShare(r)}
+            className={`rounded-md border px-1.5 py-0.5 capitalize ${shareRoles.includes(r) ? "border-kroma-500/60 bg-kroma-500/10 font-semibold" : "opacity-60"}`}
+            style={{ borderColor: shareRoles.includes(r) ? undefined : "var(--border)" }}>{r}</button>
+        ))}
+      </div>
+
+      {/* Jobs */}
+      {jobs.length > 0 && (
+        <ul className="space-y-1.5">
+          {jobs.map((j) => (
+            <li key={j.id} className="surface flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px]">
+              {(j.state === "reading" || j.state === "uploading" || j.state === "indexing") && <span className="spinner" />}
+              {j.state === "done" && <span className="text-emerald-500">✓</span>}
+              {j.state === "error" && <span className="text-red-500">✕</span>}
+              <span className="min-w-0 flex-1 truncate font-medium">{j.label}</span>
+              <span className="ink-faint shrink-0">{j.detail}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Filters */}
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap items-center gap-1">
+          {STATUS_FILTERS.map((s) => (
+            <button key={s} type="button" onClick={() => setStatusFilter(s)}
+              className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] uppercase ${statusFilter === s ? "border-kroma-500/60 bg-kroma-500/10 font-semibold" : "opacity-60"}`}
+              style={{ borderColor: statusFilter === s ? undefined : "var(--border)" }}>{s}</button>
+          ))}
+        </div>
+        <form
+          onSubmit={(e) => { e.preventDefault(); setQ(qDraft); }}
+          className="flex gap-1.5">
+          <input value={qDraft} onChange={(e) => setQDraft(e.target.value)} placeholder="Filter by title…"
+            className="surface min-w-0 flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-kroma-500" />
+          <button type="submit" className="rounded-lg border px-2.5 py-1.5 text-xs" style={{ borderColor: "var(--border)" }}>Search</button>
+          {q && (
+            <button type="button" onClick={() => { setQ(""); setQDraft(""); }}
+              className="rounded-lg border px-2 py-1.5 text-xs opacity-70" style={{ borderColor: "var(--border)" }}>Clear</button>
+          )}
+        </form>
+      </div>
+
+      {/* Document list */}
+      <div>
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider ink-faint">Your accessible docs ({total})</p>
+        {docs.length === 0 && <p className="text-[11px] ink-faint">Nothing visible to your roles yet.</p>}
+        <ul className="slim-scroll max-h-56 space-y-1.5 overflow-y-auto">
+          {docs.map((d) => {
+            const manageable = canManage(d);
+            const purgable = canPurge(d);
+            const isBusy = busy.has(d.id);
+            const inFlight = d.status === "pending" || d.status === "indexing";
+            return (
+              <li key={d.id} className="surface rounded-lg px-2.5 py-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium">
+                      {d.title}
+                      {mySub && d.owner_sub === mySub && (
+                        <span className="ink-faint ml-1.5 font-normal">· yours</span>
+                      )}
+                    </p>
+                    <p className="font-mono text-[10px] ink-faint">
+                      v{d.version} · {d.chunks} chunks · {d.mime.split("/")[1] ?? d.mime}
+                    </p>
+                  </div>
+                  <StatusBadge status={d.status} />
+                </div>
+                {d.status === "failed" && d.error && (
+                  <p className="mt-1 truncate text-[10px] text-red-400" title={d.error}>
+                    {d.error.slice(0, 120)}
+                  </p>
+                )}
+                <div className="mt-1.5 flex items-center gap-1">
+                  {manageable ? (
+                    <>
+                      <button onClick={() => handleReindex(d)} disabled={isBusy || inFlight}
+                        className="rounded px-1.5 py-0.5 text-[11px] hover:bg-sky-500/10 disabled:opacity-40"
+                        title={inFlight ? "Already indexing — wait for terminal state" : "Re-index (async job, bumps version)"}>
+                        {isBusy ? "…" : "🔁 Reindex"}
+                      </button>
+                      <button onClick={() => handleArchive(d)} disabled={isBusy}
+                        className="rounded px-1.5 py-0.5 text-[11px] hover:bg-amber-500/10 disabled:opacity-40"
+                        title="Soft-delete (Archive — recoverable via reindex)">
+                        {isBusy ? "…" : "📦 Archive"}
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-[10px] ink-faint" title="Reindex/archive needs owner+editor or admin">🔒</span>
+                  )}
+                  {purgable ? (
+                    <button onClick={() => handlePurge(d)} disabled={isBusy || inFlight}
+                      className="rounded px-1.5 py-0.5 text-[11px] text-red-500 hover:bg-red-500/10 disabled:opacity-40"
+                      title={inFlight ? "Purge blocked while indexing (409)" : "Hard-purge (irreversible CASCADE)"}>
+                      🗑 Purge
+                    </button>
+                  ) : (
+                    manageable === false && (
+                      <span className="text-[10px] ink-faint" title="Purge needs owner or admin">🔒</span>
+                    )
+                  )}
+                  {inFlight && <span className="ink-faint ml-auto text-[10px]">polling…</span>}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  );
+}

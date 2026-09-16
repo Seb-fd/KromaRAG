@@ -1,0 +1,24 @@
+{
+  "name": "kromarag",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KromaRAG — Knowledge & Role-Based Vector Architecture. RAG-enabled Agentic Assistant with RBAC.",
+  "workspaces": [
+    "apps/web"
+  ],
+  "devDependencies": {
+    "next": "16.3.5"
+  },
+  "scripts": {
+    "dev:web": "npm run dev --workspace apps/web",
+    "build:web": "npm run build --workspace apps/web",
+    "dev:api": "uv run --project apps/api uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "skills": "npx autoskills",
+    "skills:dry": "npx autoskills --dry-run",
+    "spec:check": "node scripts/check-specs.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,399 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import { useSession } from "next-auth/react";
+import { streamQuery } from "@/lib/api-client";
+import {
+  isServerThreadId,
+  useStore,
+  type ChatMessage,
+  type SourceChunk,
+} from "@/lib/store";
+import { MessageBody } from "./Message";
+
+type Phase = "idle" | "searching" | "reranking" | "synthesizing" | "error";
+const PHASE_LABEL: Record<Exclude<Phase, "idle" | "error">, string> = {
+  searching: "Searching vectors…",
+  reranking: "Reranking sources…",
+  synthesizing: "Synthesizing answer…",
+};
+const SUGGESTIONS = [
+  "What is KromaRAG and how does hybrid retrieval work?",
+  "How is RBAC enforced on every query?",
+  "Which models power answers and what happens on rate limits?",
+];
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+const HINTS: Record<string, string> = {
+  API_UNREACHABLE: "API unreachable — start apps/api on :8000",
+  UNAUTHENTICATED: "Session expired — please sign in again",
+  FORBIDDEN: "Forbidden for your role — switch role or ask an admin",
+  RATE_LIMITED: "Rate limited — wait a few seconds and retry",
+  STREAM_INTERRUPTED: "Stream interrupted — retrying is safe",
+  NOT_FOUND: "Conversation not found — it may have been deleted",
+};
+
+export function Chat() {
+  const { data: session, status } = useSession();
+  const {
+    active,
+    activeId,
+    createConversation,
+    appendMessage,
+    updateMessage,
+    adoptServerThread,
+    refreshThreadMeta,
+    syncThreads,
+    loadMoreMessages,
+    toast,
+    openInspector,
+    setSidebarOpen,
+    sidebarOpen,
+  } = useStore();
+  const [input, setInput] = useState("");
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [failedQuery, setFailedQuery] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  const streaming =
+    phase === "searching" || phase === "reranking" || phase === "synthesizing";
+  const messages = active?.messages ?? [];
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, phase]);
+
+  async function send(raw?: string) {
+    const text = (raw ?? input).trim();
+    if (!text || streaming) return;
+    const jwt = session?.accessToken;
+    if (!jwt) {
+      toast("Auth token unavailable — please sign in again", "error");
+      return;
+    }
+    // specs/06 §3.2 + §4.1: transmit conv_id only for server-backed threads.
+    // Local drafts (pending / non-UUID) omit conv_id so the server implicitly
+    // mints the thread; done.conv_id is then adopted below (FR-01).
+    let echoId: string;
+    let convToSend: string | undefined;
+    let implicitLocalId: string | null = null;
+    if (!activeId || !active) {
+      echoId = createConversation();
+      implicitLocalId = echoId;
+    } else if (active.pending || !isServerThreadId(active.id)) {
+      echoId = activeId;
+      implicitLocalId = activeId;
+    } else {
+      echoId = activeId;
+      convToSend = activeId;
+    }
+    const userMsg: ChatMessage = { id: uid(), role: "user", content: text };
+    const assistantId = uid();
+    appendMessage(echoId, userMsg);
+    appendMessage(echoId, { id: assistantId, role: "assistant", content: "" });
+    setInput("");
+    setFailedQuery(null);
+    setPhase("searching");
+    if (taRef.current) taRef.current.style.height = "auto";
+
+    let acc = "";
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    await streamQuery({
+      query: text,
+      jwt,
+      top_k: 6,
+      conv_id: convToSend,
+      signal: ctl.signal,
+      onSource: (s) => {
+        setPhase("reranking");
+        updateMessage(echoId, assistantId, {
+          chunks: s.chunks as SourceChunk[],
+        });
+      },
+      onToken: (delta) => {
+        setPhase("synthesizing");
+        acc += delta;
+        updateMessage(echoId, assistantId, { content: acc });
+      },
+      onDone: (meta) => {
+        // Update the optimistic bubble first (echoId is always known), then
+        // adopt the stable server thread id for implicit creates (FR-01, FR-09).
+        updateMessage(echoId, assistantId, {
+          usage: meta.usage,
+          model: meta.model ?? meta.usage?.model,
+          fallbackUsed: meta.fallback_used,
+        });
+        const serverId = meta.conv_id;
+        if (implicitLocalId && serverId && serverId !== implicitLocalId) {
+          adoptServerThread(implicitLocalId, serverId);
+        } else if (
+          serverId &&
+          serverId !== echoId &&
+          isServerThreadId(serverId)
+        ) {
+          adoptServerThread(echoId, serverId);
+        }
+        if (meta.fallback_used)
+          toast("Answered via Groq fallback (Gemini was limited)", "info");
+        setPhase("idle");
+        abortRef.current = null;
+        // Background revalidation: server auto-title (§4.3) + list ordering (FR-04).
+        if (serverId) {
+          void refreshThreadMeta(serverId, jwt).catch(() => {});
+          void syncThreads(jwt).catch(() => {});
+        }
+      },
+      onError: (err) => {
+        if (err.code === "LLM_FALLBACK") {
+          toast("Primary model limited — Groq fallback engaged", "info");
+          return; // informational: the stream continues
+        }
+        if (err.code === "NOT_FOUND") {
+          // Thread deleted elsewhere (leak-safe 404, FR-08): refresh the list so
+          // the stale shell disappears; user can start a new chat.
+          void syncThreads(jwt).catch(() => {});
+        }
+        setPhase("error");
+        setFailedQuery(text);
+        const hint = HINTS[err.code] ?? err.message.slice(0, 200);
+        toast(hint, "error");
+        updateMessage(echoId, assistantId, {
+          content: acc ? `${acc}\n\n⚠️ ${hint}` : `⚠️ ${hint}`,
+        });
+        abortRef.current = null;
+      },
+    });
+  }
+
+  const lastModel =
+    [...messages].reverse().find((m) => m.model)?.model ?? "gemini-3.6-flash";
+  const jwt = session?.accessToken;
+
+  async function handleLoadMore() {
+    if (!activeId || !jwt) return;
+    await loadMoreMessages(activeId, jwt);
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Header */}
+      <div className="glass z-10 flex items-center gap-2 rounded-xl px-3 py-2">
+        {!sidebarOpen && (
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="rounded-lg px-2 py-1 text-lg ink-soft hover:opacity-70"
+            title="Open sidebar"
+          >
+            ☰
+          </button>
+        )}
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold">
+            {active?.title ?? "KromaRAG"}
+          </h2>
+          <p className="text-[11px] ink-faint">
+            RBAC-filtered hybrid retrieval · SSE streaming
+            {active?.pending ? " · local draft" : ""}
+          </p>
+        </div>
+        <span
+          className="ml-auto hidden rounded-full border px-2 py-0.5 font-mono text-[11px] ink-soft sm:inline"
+          style={{ borderColor: "var(--border)" }}
+        >
+          {lastModel}
+        </span>
+      </div>
+
+      {/* Messages */}
+      <div
+        ref={scrollRef}
+        className="slim-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-4"
+      >
+        {status === "loading" && (
+          <p className="text-sm ink-faint">Loading session…</p>
+        )}
+        {active?.messagesLoading && messages.length > 0 && (
+          <p className="text-center text-xs ink-faint">Loading history…</p>
+        )}
+        {active?.hasMore && (
+          <div className="text-center">
+            <button
+              onClick={handleLoadMore}
+              disabled={active.messagesLoading}
+              className="rounded-lg border px-3 py-1.5 text-xs font-semibold ink-soft transition-opacity hover:opacity-70 disabled:opacity-40"
+              style={{ borderColor: "var(--border)" }}
+            >
+              {active.messagesLoading ? "Loading…" : "↑ Load older messages"}
+            </button>
+          </div>
+        )}
+        {messages.length === 0 &&
+          status === "authenticated" &&
+          !active?.messagesLoading && (
+            <div className="anim-fade-up mx-auto max-w-lg pt-10 text-center">
+              <Image
+                alt="KromaRAG Logo"
+                className="mx-auto mb-4 rounded-xl"
+                height={48}
+                priority
+                src="/logo.webp"
+                width={48}
+              />
+              <h3 className="text-lg font-semibold tracking-tight">
+                Ask across your accessible docs
+              </h3>
+              <p className="mt-1 text-sm ink-soft">
+                Answers cite exact chunks. Click a citation to inspect the
+                source.
+              </p>
+              <div className="mt-4 space-y-2">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => send(s)}
+                    className="surface block w-full rounded-xl px-3 py-2 text-left text-[13px] transition-all hover:border-kroma-500/60 hover:bg-kroma-500/5"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        {messages.map((m) => (
+          <div
+            key={m.id}
+            className="anim-fade-up flex"
+            style={{
+              justifyContent: m.role === "user" ? "flex-end" : "flex-start",
+            }}
+          >
+            <div
+              className={`max-w-[92%] rounded-2xl px-4 py-3 sm:max-w-[85%] ${m.role === "user" ? "text-white" : "surface"}`}
+              style={
+                m.role === "user"
+                  ? {
+                      background: "var(--user-bubble)",
+                      boxShadow: "var(--shadow)",
+                    }
+                  : { boxShadow: "var(--shadow)" }
+              }
+            >
+              {m.role === "assistant" ? (
+                <>
+                  {m.content ? (
+                    <MessageBody
+                      content={m.content}
+                      chunks={m.chunks}
+                      onOpenSource={openInspector}
+                    />
+                  ) : (
+                    <span className="cursor-blink text-kroma-500">▍</span>
+                  )}
+                  {/* Trusted source chips: render ONLY from SSE `source` metadata (m.chunks), never by parsing LLM text. */}
+                  {m.chunks && m.chunks.length > 0 && (
+                    <div
+                      className="mt-2 flex flex-wrap gap-1.5 border-t pt-2"
+                      style={{ borderColor: "var(--border)" }}
+                    >
+                      {m.chunks.slice(0, 6).map((c) => (
+                        <button
+                          key={c.chunk_id}
+                          onClick={() => openInspector(c)}
+                          className="rounded-md px-1.5 py-0.5 text-[11px] ink-soft transition-colors hover:text-current"
+                          style={{ background: "var(--surface-2)" }}
+                          title={`${c.title} · score ${c.score.toFixed(2)}`}
+                        >
+                          <span aria-hidden>📄</span> Source: {c.title} [{c.ord}
+                          ]
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {(m.usage || m.model) && (
+                    <p className="mt-1.5 font-mono text-[10.5px] ink-faint">
+                      {m.model}
+                      {m.usage
+                        ? ` · ↑${m.usage.prompt_tokens} ↓${m.usage.completion_tokens}`
+                        : ""}
+                      {m.fallbackUsed ? " · groq-fallback" : ""}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed">
+                  {m.content}
+                </p>
+              )}
+            </div>
+          </div>
+        ))}
+        {streaming && (
+          <div className="flex items-center gap-2 text-xs ink-soft">
+            <span className="spinner" />
+            <span>{PHASE_LABEL[phase as keyof typeof PHASE_LABEL]}</span>
+          </div>
+        )}
+        {phase === "error" && failedQuery && (
+          <button
+            onClick={() => send(failedQuery)}
+            className="rounded-lg border border-kroma-500/50 px-3 py-1.5 text-xs font-semibold text-kroma-600 dark:text-kroma-300"
+          >
+            ↻ Retry last query
+          </button>
+        )}
+      </div>
+
+      {/* Composer */}
+      <div
+        className="glass rounded-2xl p-2.5"
+        style={{ boxShadow: "var(--shadow)" }}
+      >
+        <div className="flex items-end gap-2">
+          <textarea
+            ref={taRef}
+            rows={1}
+            value={input}
+            disabled={streaming}
+            onChange={(e) => {
+              setInput(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height =
+                Math.min(e.target.scrollHeight, 160) + "px";
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            placeholder="Ask KromaRAG… (Enter to send, Shift+Enter for newline)"
+            className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-[var(--ink-faint)]"
+          />
+          {streaming ? (
+            <button
+              onClick={() => abortRef.current?.abort()}
+              title="Stop generating"
+              className="rounded-xl bg-red-500/90 px-4 py-2 text-sm font-semibold text-white"
+            >
+              ■ Stop
+            </button>
+          ) : (
+            <button
+              onClick={() => send()}
+              disabled={!input.trim()}
+              className="rounded-xl bg-kroma-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            >
+              Send ↑
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

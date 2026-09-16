@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── KromaRAG design tokens (light default, .dark override) ── */
+:root {
+  --bg: #f4f4f7;
+  --bg-soft: #ececf1;
+  --surface: rgba(255, 255, 255, 0.72);
+  --surface-solid: #ffffff;
+  --surface-2: rgba(255, 255, 255, 0.55);
+  --border: rgba(24, 24, 40, 0.1);
+  --ink: #17171f;
+  --ink-soft: #55555f;
+  --ink-faint: #8b8b96;
+  --accent: #6d5cff;
+  --accent-ink: #ffffff;
+  --user-bubble: #5747e3;
+  --code-bg: #1c1c28;
+  --shadow: 0 8px 30px rgba(30, 27, 75, 0.08);
+  color-scheme: light;
+}
+.dark {
+  --bg: #0a0a12;
+  --bg-soft: #101018;
+  --surface: rgba(22, 22, 32, 0.72);
+  --surface-solid: #14141d;
+  --surface-2: rgba(30, 30, 44, 0.6);
+  --border: rgba(255, 255, 255, 0.09);
+  --ink: #f2f2f7;
+  --ink-soft: #b9b9c7;
+  --ink-faint: #71717f;
+  --accent: #8f7dff;
+  --accent-ink: #0d0d16;
+  --user-bubble: #4a3fd1;
+  --code-bg: #12121b;
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01";
+  transition: background 0.25s ease, color 0.25s ease;
+}
+
+/* Surfaces */
+.surface { background: var(--surface); border: 1px solid var(--border); }
+.glass { background: var(--surface); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid var(--border); }
+.ink-soft { color: var(--ink-soft); }
+.ink-faint { color: var(--ink-faint); }
+
+/* Scrollbars */
+.slim-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.slim-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+.slim-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* Animations */
+@keyframes kroma-fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes kroma-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes kroma-spin { to { transform: rotate(360deg); } }
+@keyframes kroma-toast-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@keyframes kroma-drawer-in { from { opacity: 0; transform: translateX(32px); } to { opacity: 1; transform: none; } }
+.anim-fade-up { animation: kroma-fade-up 0.25s ease both; }
+.anim-drawer { animation: kroma-drawer-in 0.22s ease both; }
+.anim-toast { animation: kroma-toast-in 0.22s ease both; }
+.cursor-blink { animation: kroma-blink 1s step-end infinite; }
+.spinner { width: 14px; height: 14px; border-radius: 9999px; border: 2px solid var(--border); border-top-color: var(--accent); animation: kroma-spin 0.7s linear infinite; }
+
+/* Markdown body */
+.md-body { font-size: 0.9rem; line-height: 1.65; overflow-wrap: anywhere; }
+.md-body p { margin: 0.45rem 0; }
+.md-body p:first-child { margin-top: 0; }
+.md-body p:last-child { margin-bottom: 0; }
+.md-body h1, .md-body h2, .md-body h3 { font-weight: 650; letter-spacing: -0.01em; margin: 0.8rem 0 0.35rem; }
+.md-body h1 { font-size: 1.15rem; } .md-body h2 { font-size: 1.05rem; } .md-body h3 { font-size: 0.95rem; }
+.md-body ul, .md-body ol { margin: 0.4rem 0; padding-left: 1.25rem; }
+.md-body ul { list-style: disc; } .md-body ol { list-style: decimal; }
+.md-body li { margin: 0.2rem 0; }
+.md-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.md-body table { width: 100%; border-collapse: collapse; margin: 0.6rem 0; font-size: 0.82rem; display: block; overflow-x: auto; }
+.md-body th, .md-body td { border: 1px solid var(--border); padding: 0.35rem 0.6rem; text-align: left; }
+.md-body th { background: var(--surface-2); font-weight: 600; }
+.md-body blockquote { border-left: 3px solid var(--accent); padding-left: 0.7rem; margin: 0.5rem 0; color: var(--ink-soft); }
+.md-body code:not(pre code) {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.8em; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 6px; padding: 0.1em 0.35em;
+}
+
+/* sugar-high tokens (v2 emits inline var(--sh-*) colors — define palette here) */
+.codeblock {
+  --sh-class: #ffa657;
+  --sh-identifier: #79c0ff;
+  --sh-sign: #c9d1d9;
+  --sh-property: #79c0ff;
+  --sh-entity: #7ee787;
+  --sh-jsxliterals: #a5d6ff;
+  --sh-string: #a5d6ff;
+  --sh-keyword: #ff7b72;
+  --sh-comment: #8b949e;
+  --sh-entity-name: #d2a8ff;
+  --sh-number: #79c0ff;
+}
+.sh__line { display: block; }
+.sh__token--comment { font-style: italic; }

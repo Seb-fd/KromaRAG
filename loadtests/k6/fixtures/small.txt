@@ -1,0 +1,4 @@
+KromaRAG k6 fixture — small text upload.
+KromaRAG blends vector cosine similarity (0.7) with full-text ts_rank (0.3)
+over RBAC-filtered chunks. Retrieval is hybrid, reranked, and cited as
+[doc:Title:ord]. This fixture exercises the 50KB-class upload path.
