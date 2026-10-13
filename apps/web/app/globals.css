@@ -1,6 +1,16 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-kroma-100: #e3deff;
+  --color-kroma-300: #b3a6ff;
+  --color-kroma-400: #8f7dff;
+  --color-kroma-500: #6d5cff;
+  --color-kroma-600: #5747e3;
+  --color-kroma-700: #4a3fd1;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
 
 /* ── KromaRAG design tokens (light default, .dark override) ── */
 :root {

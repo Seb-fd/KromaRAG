@@ -14,6 +14,7 @@ import asyncio
 import logging
 import time
 from collections import OrderedDict
+from typing import Any, cast
 
 import httpx
 
@@ -45,8 +46,7 @@ def _model() -> str:
     from app.core.config import settings
 
     raw = (settings.embedding_model or DEFAULT_MODEL).strip()
-    if raw.startswith("models/"):
-        raw = raw[len("models/"):]
+    raw = raw.removeprefix("models/")
     if raw == LEGACY_MODEL:
         log.warning(
             "embedding model %s is retired (404 NOT_FOUND); set EMBEDDING_MODEL=%s",
@@ -117,11 +117,12 @@ def _sdk_embed_batch_sync(texts: list[str], model: str, key: str) -> list[list[f
     if _wants_truncation(model):
         kwargs["config"] = types.EmbedContentConfig(output_dimensionality=DIM)
     try:
-        res = client.models.embed_content(model=model, contents=texts, **kwargs)
+        res = client.models.embed_content(model=model, contents=cast(Any, texts), **kwargs)
     except Exception as e:  # noqa: BLE001 — reformat below
         raise _format_sdk_error(e, model) from e
     try:
-        vecs = [list(em.values) for em in res.embeddings]
+        embeddings = res.embeddings or []
+        vecs = [list(em.values or []) for em in embeddings]
     except (AttributeError, TypeError) as e:
         raise RuntimeError(f"Gemini embed: unexpected response shape for model '{model}': {e}") from e
     for v in vecs:

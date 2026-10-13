@@ -1,20 +1,28 @@
-"""Production hardening tests (specs/08 §7): rate limits, dual-secret rotation,
+"""Production hardening tests (specs/08 §7): rate limits, Clerk kid-rollover,
 security headers, health/readyz probes, fail-closed boot guards. Offline (fakes)."""
 from __future__ import annotations
 
 import base64
 import json
-import time
 
-import jwt
 import pytest
 from fastapi.security import HTTPAuthorizationCredentials
 from httpx import ASGITransport, AsyncClient
 
 from app.core import rate_limit as rl
-from app.core.config import Settings, settings
 from app.core import security as sec
+from app.core.config import Settings, settings
 from app.main import app
+from tests._clerk import (
+    CLERK_KID,
+    CLERK_PREV_KID,
+    CLERK_TEST_AUD,
+    CLERK_TEST_ISS,
+    clerk_token,
+    hs256_token,
+    install_clerk,
+    jwks_list,
+)
 
 
 def _b64url(obj: dict) -> str:
@@ -29,18 +37,10 @@ def _unsigned_token(sub: str = "u1", roles: list[str] | None = None) -> str:
 
 
 def _signed_token(secret: str, sub: str = "u1", roles: list[str] | None = None) -> str:
-    now = int(time.time())
-    payload = {
-        "sub": sub,
-        "email": f"{sub}@x.com",
-        "roles": roles or ["viewer"],
-        "iss": settings.jwt_issuer,
-        "aud": settings.jwt_audience,
-        "exp": now + 3600,
-        "iat": now,
-        "jti": "t1",
-    }
-    return jwt.encode(payload, secret, algorithm="HS256")
+    """Legacy HS256 helper — dev-bypass only (non-prod). Kept for the single
+    non-prod test proving local bypass still verifies; all other auth tests
+    use Clerk RS256 via tests/_clerk.py."""
+    return hs256_token(secret, sub=f"demo|{sub}@x.com", roles=roles)
 
 
 async def _no_jwks() -> list[dict]:
@@ -82,7 +82,7 @@ async def test_security_headers_present():
         assert resp.headers.get("X-Content-Type-Options") == "nosniff"
         assert resp.headers.get("X-Frame-Options") == "DENY"
         assert resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
-        assert "server" not in {k.lower() for k in resp.headers.keys()}
+        assert "server" not in {k.lower() for k in resp.headers}
 
 
 @pytest.mark.asyncio
@@ -166,34 +166,124 @@ def test_rate_limit_unit_sliding_window():
     assert reset >= 1
 
 
-# ── Dual-secret rotation ──
+# ── Clerk kid-rollover (replaces dual-secret HS256 rotation) ──
 
 @pytest.mark.asyncio
-async def test_dual_secret_current_and_previous(monkeypatch):
-    monkeypatch.setattr(sec, "_get_jwks", _no_jwks)
-    cur, prev = "c" * 32, "p" * 32
-    monkeypatch.setattr(settings, "auth_secret_current", cur)
-    monkeypatch.setattr(settings, "auth_secret_previous", prev)
-    monkeypatch.setattr(settings, "auth_secret", "legacyUNUSED" + "x" * 20)
-    for secret in (cur, prev):
-        tok = _signed_token(secret, sub="alice")
-        p = await sec.get_current_principal(HTTPAuthorizationCredentials(scheme="Bearer", credentials=tok))
-        assert p.sub == "alice" and p.roles == ["viewer"]
-    # Unknown secret still rejected.
-    bad = _signed_token("z" * 32, sub="mallory")
+async def test_clerk_kid_rollover_current_and_prev(monkeypatch):
+    """Current kid verifies; prev-set kid verifies via fallback; unknown kid 401s."""
+    install_clerk(monkeypatch, sec, settings, current_kids=[CLERK_KID])
+    # Point the prev-set at the older key (rotation overlap).
+    monkeypatch.setattr(
+        sec, "_jwks_prev", {"keys": jwks_list([CLERK_PREV_KID]), "fetched_at": 0.0}
+    )
+    cur_tok = clerk_token(sub="user_alice", roles=["viewer"])
+    p = await sec.get_current_principal(
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials=cur_tok)
+    )
+    assert p.sub == "user_alice" and p.roles == ["viewer"]
+    assert p.email and "@" in p.email
+
+    prev_tok = clerk_token(sub="user_bob", roles=["editor"], kid=CLERK_PREV_KID)
+    p2 = await sec.get_current_principal(
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials=prev_tok)
+    )
+    assert p2.sub == "user_bob" and p2.roles == ["editor"]
+
+    # Unknown kid (fresh key never published) still rejected.
+    import time as _time
+    import uuid as _uuid
+
+    import jwt as _jwt
+
+    from tests._clerk import _ensure_keypair
+
+    _ensure_keypair("clerk-test-unknown")
+    from cryptography.hazmat.primitives import serialization as _ser
+    from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
+
+    _priv = _rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    _pem = _priv.private_bytes(
+        _ser.Encoding.PEM, _ser.PrivateFormat.PKCS8, _ser.NoEncryption()
+    ).decode()
+    now = int(_time.time())
+    bad = _jwt.encode(
+        {"sub": "user_mallory", "email": "m@example.com", "roles": ["viewer"],
+         "iss": CLERK_TEST_ISS, "aud": CLERK_TEST_AUD,
+         "exp": now + 3600, "iat": now, "jti": str(_uuid.uuid4())},
+        _pem, algorithm="RS256", headers={"kid": "clerk-test-unknown"},
+    )
     with pytest.raises(Exception):
-        await sec.get_current_principal(HTTPAuthorizationCredentials(scheme="Bearer", credentials=bad))
+        await sec.get_current_principal(
+            HTTPAuthorizationCredentials(scheme="Bearer", credentials=bad)
+        )
 
 
 @pytest.mark.asyncio
-async def test_dual_secret_legacy_fallback(monkeypatch):
-    monkeypatch.setattr(sec, "_get_jwks", _no_jwks)
+async def test_clerk_roles_from_public_metadata_fallback(monkeypatch):
+    """Template `roles` absent → public_metadata.roles used; empty → viewer."""
+    install_clerk(monkeypatch, sec, settings, current_kids=[CLERK_KID])
+    _ = clerk_token(sub="user_pm", roles=None, public_metadata={"roles": ["admin"]})
+    # clerk_token always sets email; drop top-level roles by re-minting without it.
+    import time as _time2
+    import uuid as _uuid2
+
+    import jwt as _jwt2
+
+    # Re-mint manually without `roles` to force the fallback path.
+    from tests._clerk import _ensure_keypair
+
+    _pem2 = _ensure_keypair(CLERK_KID)
+    now2 = int(_time2.time())
+    tok2 = _jwt2.encode(
+        {"sub": "user_pm", "email": "pm@example.com",
+         "public_metadata": {"roles": ["admin"]},
+         "iss": CLERK_TEST_ISS, "aud": CLERK_TEST_AUD,
+         "exp": now2 + 3600, "iat": now2, "jti": str(_uuid2.uuid4())},
+        _pem2, algorithm="RS256", headers={"kid": CLERK_KID},
+    )
+    p = await sec.get_current_principal(
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials=tok2)
+    )
+    assert p.roles == ["admin"]
+
+    tok3 = clerk_token(sub="user_empty", roles=[])
+    p3 = await sec.get_current_principal(
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials=tok3)
+    )
+    assert p3.roles == ["viewer"]
+
+
+@pytest.mark.asyncio
+async def test_hs256_dev_bypass_still_verifies_locally(monkeypatch):
+    """Single non-prod test proving the dev Credentials bypass still works locally."""
+    install_clerk(monkeypatch, sec, settings, current_kids=[CLERK_KID], env="development")
+    secret = "dev-bypass-secret-" + "x" * 24
+    monkeypatch.setattr(settings, "auth_secret", secret)
     monkeypatch.setattr(settings, "auth_secret_current", "")
     monkeypatch.setattr(settings, "auth_secret_previous", "")
-    monkeypatch.setattr(settings, "auth_secret", "legacy-secret-" + "x" * 24)
-    tok = _signed_token(settings.auth_secret, sub="bob", roles=["editor"])
-    p = await sec.get_current_principal(HTTPAuthorizationCredentials(scheme="Bearer", credentials=tok))
-    assert p.sub == "bob" and p.roles == ["editor"]
+    # Dev bypass mints with the loopback issuer (never the Clerk issuer).
+    monkeypatch.setattr(settings, "jwt_issuer", "http://localhost:3000")
+    tok = hs256_token(secret, sub="demo|bob@example.com", roles=["editor"])
+    p = await sec.get_current_principal(
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials=tok)
+    )
+    assert p.sub == "demo|bob@example.com" and p.roles == ["editor"]
+
+
+@pytest.mark.asyncio
+async def test_prod_rejects_hs256_dev_bypass(monkeypatch):
+    """Prod physically cannot accept kid-less HS256 bypass tokens."""
+    install_clerk(
+        monkeypatch, sec, settings,
+        current_kids=[CLERK_KID], iss="https://clerk.test", env="production",
+    )
+    secret = "dev-bypass-secret-" + "x" * 24
+    monkeypatch.setattr(settings, "auth_secret", secret)
+    tok = hs256_token(secret, sub="demo|mallory@example.com", roles=["admin"])
+    with pytest.raises(Exception):
+        await sec.get_current_principal(
+            HTTPAuthorizationCredentials(scheme="Bearer", credentials=tok)
+        )
 
 
 # ── Fail-closed guards ──
@@ -201,10 +291,12 @@ async def test_dual_secret_legacy_fallback(monkeypatch):
 def _prod_settings(**over) -> Settings:
     base = {
         "env": "production",
-        "auth_secret_current": "c" * 40,
-        "jwt_issuer": "https://kromarag.vercel.app",
+        "jwt_issuer": "https://kromarag-prod.clerk.accounts.dev",
+        "jwt_audience": "kromarag-web",
         "cors_origins": ["https://kromarag.vercel.app"],
         "database_url": "postgresql+asyncpg://u:p@host-pooler.neon.tech:5432/db?sslmode=require",
+        "google_api_key": "test-google-key",
+        "groq_api_key": "test-groq-key",
     }
     base.update(over)
     return Settings(**base)
@@ -212,18 +304,6 @@ def _prod_settings(**over) -> Settings:
 
 def test_fail_closed_guards_pass_when_secure():
     _prod_settings().validate_prod_guards()  # must not raise
-
-
-def test_fail_closed_short_secret():
-    s = _prod_settings(auth_secret_current="short")
-    with pytest.raises(RuntimeError, match="auth_secret_invalid"):
-        s.validate_prod_guards()
-
-
-def test_fail_closed_default_secret():
-    s = _prod_settings(auth_secret_current="change-me-32-chars-min-xxxxxxxx")
-    with pytest.raises(RuntimeError, match="auth_secret_invalid"):
-        s.validate_prod_guards()
 
 
 def test_fail_closed_cors_wildcard():
@@ -238,6 +318,18 @@ def test_fail_closed_http_issuer():
         s.validate_prod_guards()
 
 
+def test_fail_closed_localhost_clerk_issuer():
+    s = _prod_settings(jwt_issuer="https://localhost:3000")
+    with pytest.raises(RuntimeError, match="jwt_issuer_invalid"):
+        s.validate_prod_guards()
+
+
+def test_fail_closed_wrong_audience():
+    s = _prod_settings(jwt_audience="wrong-aud")
+    with pytest.raises(RuntimeError, match="jwt_audience_invalid"):
+        s.validate_prod_guards()
+
+
 def test_fail_closed_db_without_ssl():
     s = _prod_settings(database_url="postgresql+asyncpg://u:p@localhost:5432/db")
     with pytest.raises(RuntimeError, match="database_url_invalid"):
@@ -245,5 +337,52 @@ def test_fail_closed_db_without_ssl():
 
 
 def test_nonprod_guards_relaxed():
-    s = Settings(env="development", cors_origins=["*"], auth_secret_current="x")
+    s = Settings(env="development", cors_origins=["*"], jwt_issuer="http://localhost:3000")
     s.validate_prod_guards()  # must not raise outside production
+
+
+def test_fail_closed_missing_gemini_key():
+    s = _prod_settings(google_api_key="", gemini_api_key="")
+    with pytest.raises(RuntimeError, match="llm_key_missing"):
+        s.validate_prod_guards()
+
+
+def test_fail_closed_missing_groq_key():
+    s = _prod_settings(groq_api_key="")
+    with pytest.raises(RuntimeError, match="llm_key_missing"):
+        s.validate_prod_guards()
+
+
+# ── Prod verify hygiene (dev HS256 filter kept harmlessly; Clerk is prod path) ──
+
+def test_prod_verify_drops_documented_legacy_default():
+    # Explicit legacy default (hermetic: local dev .env must not leak into the assertion).
+    s = _prod_settings(auth_secret="change-me-dev-only-override-in-production")
+    assert s.effective_verify_secrets == []
+
+
+def test_prod_verify_keeps_strong_previous_and_legacy():
+    s = _prod_settings(auth_secret_current="c" * 40, auth_secret_previous="p" * 40, auth_secret="l" * 40)
+    assert s.effective_verify_secrets == ["c" * 40, "p" * 40, "l" * 40]
+
+
+def test_prod_verify_drops_weak_previous_but_keeps_current():
+    s = _prod_settings(auth_secret_current="c" * 40, auth_secret_previous="short", auth_secret="l" * 40)
+    assert s.effective_verify_secrets == ["c" * 40, "l" * 40]
+
+
+@pytest.mark.asyncio
+async def test_prod_attacker_hs256_rejected(monkeypatch):
+    """End-to-end: HS256 token forged with the documented dev default 401s in prod."""
+    install_clerk(
+        monkeypatch, sec, settings,
+        current_kids=[CLERK_KID], iss="https://kromarag-prod.clerk.accounts.dev",
+        env="production",
+    )
+    monkeypatch.setattr(settings, "auth_secret", "change-me-dev-only-override-in-production")
+    forged = hs256_token(
+        "change-me-dev-only-override-in-production",
+        sub="demo|mallory@example.com", roles=["admin"],
+    )
+    with pytest.raises(Exception):
+        await sec.get_current_principal(HTTPAuthorizationCredentials(scheme="Bearer", credentials=forged))

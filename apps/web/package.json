@@ -6,12 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
-    "jose": "^6.2.12",
-    "next": "16.3.5",
-    "next-auth": "^5.0.0-beta.25",
+    "@clerk/nextjs": "^7.9.4",
+    "next": "16.4.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
@@ -19,14 +20,15 @@
     "sugar-high": "^2.4.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^20.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "autoprefixer": "^10.4.0",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.3.5",
+    "eslint-config-next": "^16.4.0",
     "postcss": "^8.5.28",
-    "tailwindcss": "^3.4.0",
-    "typescript": "^5.5.0"
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.5.0",
+    "vitest": "^3.2.7"
   }
 }

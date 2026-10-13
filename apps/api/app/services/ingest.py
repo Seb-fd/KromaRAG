@@ -11,11 +11,14 @@ Legacy 'ready' (001 default) is normalized to 'indexed' on read/migrate; new wri
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
 import re
+import socket
 import uuid
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -156,7 +159,7 @@ def decode_upload_bytes(data: bytes, mime: str, filename: str | None = None, max
     """Decode multipart file bytes to text. PDF via server-side pypdf (specs/07 FR-01)."""
     from app.core.config import settings
 
-    cap = int(max_bytes or getattr(settings, "doc_upload_max_bytes", 20_971_520))
+    cap = int(max_bytes if max_bytes is not None else getattr(settings, "doc_upload_max_bytes", 20_971_520))
     if len(data or b"") > cap:
         raise ValueError(f"file exceeds {cap} byte cap")
     if not data:
@@ -182,16 +185,83 @@ def decode_upload_bytes(data: bytes, mime: str, filename: str | None = None, max
 
 
 async def fetch_url_text(url: str, client: httpx.AsyncClient | None = None) -> str:
+    """Fetch URL text with SSRF guard (specs/08 SEC-06 §4.5).
+
+    Allows http/https only, max 3 redirects (each hop re-validated),
+    explicit timeouts, URL_MAX_BYTES cap. Private/loopback/link-local/
+    multicast/reserved/IMDS hosts blocked → ValueError(URL_FETCH_BLOCKED).
+    Network failures → ValueError(URL_FETCH_FAILED). No internal IPs disclosed.
+    """
+    current = (url or "").strip()
+    if not current:
+        raise ValueError("URL_FETCH_BLOCKED: empty url")
     own = client is None
     c = client or httpx.AsyncClient()
     try:
-        r = await c.get(url, timeout=15.0, follow_redirects=True)
-        r.raise_for_status()
-        data = r.content[:URL_MAX_BYTES]
-        return data.decode(r.encoding or "utf-8", errors="replace")
+        timeout = httpx.Timeout(connect=3.0, read=15.0, write=5.0, pool=3.0)
+        for _hop in range(4):  # initial + 3 redirects
+            parsed = urlparse(current)
+            if parsed.scheme not in ("http", "https"):
+                raise ValueError("URL_FETCH_BLOCKED: scheme not allowed")
+            _assert_public_host(parsed.hostname or "")
+            try:
+                r = await c.get(current, timeout=timeout, follow_redirects=False, headers={})
+            except ValueError:
+                raise
+            except httpx.TimeoutException as e:
+                raise ValueError(f"URL_FETCH_FAILED: timeout fetching host {(parsed.hostname or '')[:120]}") from e
+            except Exception as e:  # noqa: BLE001 — DNS/connect errors → safe 422 upstream
+                raise ValueError(f"URL_FETCH_FAILED: fetch failed for host {(parsed.hostname or '')[:120]}") from e
+            if r.status_code in (301, 302, 303, 307, 308):
+                loc = (r.headers.get("location") or "").strip()
+                if not loc:
+                    raise ValueError("URL_FETCH_FAILED: empty redirect")
+                current = urljoin(current, loc)
+                continue
+            try:
+                r.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                raise ValueError(f"URL_FETCH_FAILED: upstream status {r.status_code}") from e
+            data = r.content[:URL_MAX_BYTES]
+            return data.decode(r.encoding or "utf-8", errors="replace")
+        raise ValueError("URL_FETCH_BLOCKED: too many redirects")
     finally:
         if own:
             await c.aclose()
+
+
+def _assert_public_host(host: str) -> None:
+    """Raise ValueError(URL_FETCH_BLOCKED) when host resolves to non-public IP."""
+    h = (host or "").strip().strip(".").lower()
+    if not h:
+        raise ValueError("URL_FETCH_BLOCKED: empty host")
+    if h in ("localhost",):
+        raise ValueError("URL_FETCH_BLOCKED: host not allowed")
+    try:
+        infos = socket.getaddrinfo(h, None, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
+    except socket.gaierror as e:
+        raise ValueError(f"URL_FETCH_FAILED: dns failed for host {h[:120]}") from e
+    except Exception as e:  # noqa: BLE001 — fail closed
+        raise ValueError(f"URL_FETCH_FAILED: dns failed for host {h[:120]}") from e
+    if not infos:
+        raise ValueError(f"URL_FETCH_FAILED: dns failed for host {h[:120]}")
+    for info in infos:
+        sockaddr = info[4] if len(info) > 4 else None
+        ip_str = sockaddr[0] if sockaddr else ""
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            raise ValueError("URL_FETCH_BLOCKED: host not allowed")
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            log.warning("ingest url blocked host=%s reason=non-public-ip", h[:120])
+            raise ValueError("URL_FETCH_BLOCKED: host not allowed")
 
 
 async def plan_ingest(
@@ -368,7 +438,7 @@ def _resolve_reindex_params(doc: dict, chunk_tokens: int | None,
         raise ValueError(f"chunk_overlap {overlap} out of range 0–500")
     if overlap >= target:
         raise ValueError(f"chunk_overlap {overlap} must be < chunk_tokens {target}")
-    model = ((embedding_model or doc.get("embedding_model") or PINNED_EMBEDDING_MODEL)).strip()
+    model = (embedding_model or doc.get("embedding_model") or PINNED_EMBEDDING_MODEL).strip()
     if model != PINNED_EMBEDDING_MODEL:
         raise ValueError(
             f"embedding model '{model}' != pinned '{PINNED_EMBEDDING_MODEL}' (EMBEDDING_MISMATCH Phase 1)"

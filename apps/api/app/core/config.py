@@ -9,6 +9,16 @@ from typing import Any
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Prefixes that must never verify a JWT in production: documented dev defaults
+# and deploy-kit placeholders are public, so any token "signed" with them is
+# forgeable (specs/08 §3.3 verify hygiene). Random 48-byte secrets are unaffected.
+_INSECURE_SECRET_PREFIXES = ("change-me", "placeholder")
+
+
+def _is_insecure_secret(value: str) -> bool:
+    s = (value or "").strip()
+    return (not s) or len(s) < 32 or s.lower().startswith(_INSECURE_SECRET_PREFIXES)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../.env", "../../.env"), extra="ignore")
@@ -33,20 +43,27 @@ class Settings(BaseSettings):
     langchain_project: str = "KromaRAG"
     langchain_endpoint: str = "https://api.smith.langchain.com"
 
-    # ── Auth secrets: dual-secret overlap (specs/08 §3.3). Legacy AUTH_SECRET kept. ──
-    # Default stays an obvious non-secret that still trips the prod guard
-    # (startswith "change-me") but is ≥32 chars so dev/test JWT round-trips
-    # don't emit PyJWT InsecureKeyLengthWarning noise.
+    # ── Auth: Clerk RS256 (prod) + HS256 dev-bypass (non-prod only). ──
+    # AUTH_SECRET* are dev-only now (Clerk cutover): the web dev-bypass mints
+    # HS256 locally with the dev AUTH_SECRET and JWT_ISSUER=http://localhost:3000.
+    # Prod physically cannot accept HS256 (security.py rejects kid-less tokens
+    # when is_prod). Default stays an obvious non-secret ≥32 chars so dev/test
+    # JWT round-trips don't emit PyJWT InsecureKeyLengthWarning noise.
     auth_secret: str = "change-me-dev-only-override-in-production"
     auth_secret_current: str = ""
     auth_secret_previous: str = ""
+    # Clerk issuer: https://<app>.clerk.accounts.dev (kromarag-dev / kromarag-prod
+    # apps; never share keys). Template `kromarag` carries aud=kromarag-web.
     jwt_issuer: str = "http://localhost:3000"
     jwt_audience: str = "kromarag-web"
-    # ── JWKS fetch control (HS256-only dev must not storm Next.js /.well-known) ──
-    # Empty = derive {jwt_issuer}/.well-known/jwks.json (prod RS256 path).
+    # ── JWKS fetch control ──
+    # Explicit override wins: CLERK_JWKS_URL > JWT_JWKS_URL > derive
+    # {jwt_issuer}/.well-known/jwks.json (prod Clerk RS256 path).
+    clerk_jwks_url: str = ""
     jwt_jwks_url: str = ""
-    # False = never fetch JWKS (pure HS256). Default True so prod RS256 works;
-    # _get_jwks() still self-skips loopback issuers without an explicit URL.
+    # False = never fetch JWKS (pure HS256 dev-bypass). Default True so prod
+    # Clerk RS256 works; _get_jwks() still self-skips loopback issuers without
+    # an explicit URL.
     jwt_jwks_enabled: bool = True
 
     cors_origins: list[str] = ["http://localhost:3000"]
@@ -78,7 +95,7 @@ class Settings(BaseSettings):
     web_concurrency: int = 1
     pool_min_size: int = 2
     pool_max_size: int = 20
-    pool_command_timeout: int = 10  # POOL_COMMAND_TIMEOUT_S
+    pool_command_timeout: int = 10  # POOL_COMMAND_TIMEOUT (effective env name; specs/08 §2.6)
     rate_limit_query_per_min: int = 100
     rate_limit_ingest_per_min: int = 20
     rate_limit_unauth_per_min: int = 10
@@ -139,22 +156,44 @@ class Settings(BaseSettings):
         # Legacy AUTH_SECRET doubles as previous when rotation fields partially set.
         if self.auth_secret and self.auth_secret not in secrets:
             secrets.append(self.auth_secret)
+        # Prod hygiene (specs/08 §3.3): documented defaults/placeholders are public
+        # and therefore forgeable — never verify with them in production. Insecure
+        # entries are dropped (requests 401) rather than served. Non-prod keeps
+        # every entry so dev/test rotation semantics are unchanged.
+        if self.is_prod:
+            secrets = [s for s in secrets if not _is_insecure_secret(s)]
         return [s for s in secrets if s]
 
     def validate_prod_guards(self) -> None:
-        """Fail-closed boot checks (specs/08 §6). No-op unless ENV=production."""
+        """Fail-closed boot checks (specs/08 §6, Clerk cutover). No-op unless ENV=production.
+
+        Clerk cutover: AUTH_SECRET_* are dev-only and no longer required in prod.
+        Prod identity is Clerk RS256 via JWKS, so the guards enforce a real
+        Clerk issuer (https + non-localhost) and the kromarag-web audience.
+        LLM keys enforced per §6 matrix (GEMINI + GROQ are load-bearing).
+        """
         if not self.is_prod:
             return
-        cur = self.effective_current_secret
-        if not cur or len(cur) < 32 or cur.startswith("change-me"):
-            raise RuntimeError("auth_secret_invalid: AUTH_SECRET_CURRENT must be set (≥32 chars, non-default) in production")
+        # Clerk issuer must be https and non-loopback: this kills the HS256
+        # loopback dev path in prod (security.py also rejects kid-less tokens).
+        iss = (self.jwt_issuer or "").strip()
+        if not iss.startswith("https://"):
+            raise RuntimeError("jwt_issuer_invalid: JWT_ISSUER must be https:// in production (Clerk issuer, e.g. https://<app>.clerk.accounts.dev)")
+        try:
+            from urllib.parse import urlparse as _urlparse
+
+            host = (_urlparse(iss).hostname or "").lower()
+        except Exception:
+            host = ""
+        if not host or host in ("localhost", "127.0.0.1", "::1"):
+            raise RuntimeError("jwt_issuer_invalid: JWT_ISSUER must not be localhost in production (use the Clerk issuer)")
+        if (self.jwt_audience or "").strip() != "kromarag-web":
+            raise RuntimeError("jwt_audience_invalid: JWT_AUDIENCE must be kromarag-web in production (Clerk template `kromarag` carries it)")
         origins = [o.strip() for o in (self.cors_origins or [])]
         if not origins:
             raise RuntimeError("cors_invalid: CORS_ORIGINS must not be empty in production")
         if any(o == "*" for o in origins):
             raise RuntimeError("cors_wildcard_rejected: CORS_ORIGINS must not contain '*' in production")
-        if not (self.jwt_issuer or "").startswith("https://"):
-            raise RuntimeError("jwt_issuer_invalid: JWT_ISSUER must be https:// in production")
         url = self.database_url or ""
         # specs/08 §2.4 + §6 RES-03: prod runtime connects ONLY via Neon pooled
         # host with TLS. Both predicates are fail-closed (release decision 2026-09-16).
@@ -162,6 +201,11 @@ class Settings(BaseSettings):
             raise RuntimeError("database_url_invalid: DATABASE_URL must use Neon pooled host ('-pooler') in production")
         if "sslmode=require" not in url:
             raise RuntimeError("database_url_invalid: DATABASE_URL must include sslmode=require in production")
+        # specs/08 §6: LLM keys are load-bearing — fail fast, not 503 at runtime.
+        if not ((self.google_api_key or "").strip() or (self.gemini_api_key or "").strip()):
+            raise RuntimeError("llm_key_missing: GOOGLE_API_KEY or GEMINI_API_KEY is required in production")
+        if not (self.groq_api_key or "").strip():
+            raise RuntimeError("llm_key_missing: GROQ_API_KEY is required in production (fallback is load-bearing)")
         # Spec 09: chaos flags are staging-only — fail closed in production.
         if (self.chaos_sql_delay_ms or 0) != 0:
             raise RuntimeError("chaos_enabled_in_production: CHAOS_SQL_DELAY_MS must be 0 in production")

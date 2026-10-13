@@ -1,5 +1,6 @@
 """Ingest endpoint — Phase 2 wired to chunk+embed+DB (specs/03 §1, specs/02 §1)."""
 from fastapi import APIRouter, Depends, HTTPException
+
 from app.core.security import require_role
 from app.schemas import IngestRequest, Principal
 
@@ -14,6 +15,8 @@ async def ingest(body: IngestRequest, p: Principal = Depends(require_role("edito
 
     pool = get_pool()
     if pool is None:
+        if settings.env.lower() == "production":
+            raise HTTPException(503, {"code": "DB_UNAVAILABLE", "message": "no db"})
         # No DB (local scaffold): validate + chunk only, so contract still verifiable
         chunks, _ = await plan_ingest(body.title, body.content or "", body.mime,
                                       target=settings.chunk_tokens, overlap=settings.chunk_overlap)
@@ -25,6 +28,10 @@ async def ingest(body: IngestRequest, p: Principal = Depends(require_role("edito
             target=settings.chunk_tokens, overlap=settings.chunk_overlap,
         )
     except ValueError as e:
-        raise HTTPException(422, {"code": "VALIDATION", "message": str(e)})
+        msg = str(e)
+        code = "URL_FETCH_BLOCKED" if msg.startswith("URL_FETCH_BLOCKED") else (
+            "URL_FETCH_FAILED" if msg.startswith("URL_FETCH_FAILED") else "VALIDATION"
+        )
+        raise HTTPException(422, {"code": code, "message": msg[:500]})
     except RuntimeError as e:  # e.g. missing GOOGLE_API_KEY
         raise HTTPException(503, {"code": "DB_UNAVAILABLE", "message": str(e)})

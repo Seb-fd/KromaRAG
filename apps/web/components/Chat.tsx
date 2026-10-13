@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { useSession } from "next-auth/react";
+import { clerkTemplateMissing, getKromaToken, useKromaSession } from "@/lib/kroma-token";
 import { streamQuery } from "@/lib/api-client";
 import {
   isServerThreadId,
@@ -36,7 +36,7 @@ const HINTS: Record<string, string> = {
 };
 
 export function Chat() {
-  const { data: session, status } = useSession();
+  const { isSignedIn, isLoaded } = useKromaSession();
   const {
     active,
     activeId,
@@ -71,9 +71,14 @@ export function Chat() {
   async function send(raw?: string) {
     const text = (raw ?? input).trim();
     if (!text || streaming) return;
-    const jwt = session?.accessToken;
+    const jwt = await getKromaToken();
     if (!jwt) {
-      toast("Auth token unavailable — please sign in again", "error");
+      toast(
+        clerkTemplateMissing()
+          ? 'Clerk token template "kromarag" missing — create it in Dashboard → Sessions → Customize session token (aud=kromarag-web)'
+          : "Auth token unavailable — please sign in again",
+        "error",
+      );
       return;
     }
     // specs/06 §3.2 + §4.1: transmit conv_id only for server-backed threads.
@@ -151,8 +156,10 @@ export function Chat() {
       },
       onError: (err) => {
         if (err.code === "LLM_FALLBACK") {
-          toast("Primary model limited — Groq fallback engaged", "info");
-          return; // informational: the stream continues
+          // Informational only — the stream continues and onDone toasts the
+          // final "Answered via Groq fallback" notice. Toasting here too
+          // produces a duplicate notice for a single fallback event.
+          return;
         }
         if (err.code === "NOT_FOUND") {
           // Thread deleted elsewhere (leak-safe 404, FR-08): refresh the list so
@@ -161,7 +168,10 @@ export function Chat() {
         }
         setPhase("error");
         setFailedQuery(text);
-        const hint = HINTS[err.code] ?? err.message.slice(0, 200);
+        const hint =
+          err.code === "UNAUTHENTICATED" && clerkTemplateMissing()
+            ? 'Backend rejected the fallback token — create Clerk template "kromarag" (aud=kromarag-web) and check API JWT_ISSUER'
+            : (HINTS[err.code] ?? err.message.slice(0, 200));
         toast(hint, "error");
         updateMessage(echoId, assistantId, {
           content: acc ? `${acc}\n\n⚠️ ${hint}` : `⚠️ ${hint}`,
@@ -173,10 +183,11 @@ export function Chat() {
 
   const lastModel =
     [...messages].reverse().find((m) => m.model)?.model ?? "gemini-3.6-flash";
-  const jwt = session?.accessToken;
 
   async function handleLoadMore() {
-    if (!activeId || !jwt) return;
+    if (!activeId) return;
+    const jwt = await getKromaToken();
+    if (!jwt) return;
     await loadMoreMessages(activeId, jwt);
   }
 
@@ -215,7 +226,7 @@ export function Chat() {
         ref={scrollRef}
         className="slim-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-4"
       >
-        {status === "loading" && (
+        {!isLoaded && (
           <p className="text-sm ink-faint">Loading session…</p>
         )}
         {active?.messagesLoading && messages.length > 0 && (
@@ -234,7 +245,7 @@ export function Chat() {
           </div>
         )}
         {messages.length === 0 &&
-          status === "authenticated" &&
+          isSignedIn &&
           !active?.messagesLoading && (
             <div className="anim-fade-up mx-auto max-w-lg pt-10 text-center">
               <Image
@@ -242,6 +253,7 @@ export function Chat() {
                 className="mx-auto mb-4 rounded-xl"
                 height={48}
                 priority
+                unoptimized
                 src="/logo.webp"
                 width={48}
               />

@@ -4,6 +4,7 @@
 Aliases are identical handlers (non-breaking, specs/08 §3.4).
 """
 from fastapi import APIRouter
+
 from app.core.config import settings
 from app.services.db import db_ping, pool_stats
 

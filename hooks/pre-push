@@ -3,7 +3,7 @@
 # - spec:check (SDD gate)
 # - api pytest (apps/api, unfrozen sync not needed locally — uses current env)
 # - web lint (strict, zero warnings)
-# - web build (with CI-equivalent dummy AUTH_SECRET; auth.ts throws in production without it)
+# - web build (with CI-equivalent dummy Clerk keys; ClerkProvider validates key format at build time)
 set -eu
 echo "kroma pre-push: 1/4 spec:check"
 npm run spec:check
@@ -19,6 +19,6 @@ echo "kroma pre-push: 3/4 web lint"
 npx --workspace apps/web eslint . --max-warnings=0
 
 echo "kroma pre-push: 4/4 web build"
-AUTH_SECRET=ci-dummy-32-chars-minimum-0123456789 NEXTAUTH_URL=http://localhost:3000 NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 npm run build --workspace apps/web
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_Zm9vLWJhci5jbGVyay5hY2NvdW50cy5kZXYk CLERK_SECRET_KEY=sk_test_Zm9vYmFyYmF6cXV4Nzg5MDEyMzQ1Njc4OTA= NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 npm run build --workspace apps/web
 
 echo "kroma pre-push: OK — matches CI required jobs (docker + gitleaks run in CI)"

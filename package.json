@@ -7,9 +7,11 @@
     "apps/web"
   ],
   "devDependencies": {
-    "next": "16.3.5"
+    "next": "16.4.0"
   },
   "scripts": {
+    "audit:web": "node scripts/audit-web.js",
+    "audit:web:prod": "npm audit --omit=dev --workspace apps/web",
     "dev:web": "npm run dev --workspace apps/web",
     "build:web": "npm run build --workspace apps/web",
     "dev:api": "uv run --project apps/api uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",

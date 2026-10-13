@@ -5,6 +5,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { highlight } from "sugar-high";
 import type { SourceChunk } from "@/lib/store";
+import { safeHref } from "@/lib/safe-url";
 import {
   CITATION_RE,
   buildChunkMap,
@@ -140,7 +141,10 @@ function makeMdComponents(
       return <code className={props.className}>{props.children}</code>;
     },
     a(props) {
-      return <a href={props.href} target="_blank" rel="noreferrer">{withCites(props.children, byKey, onOpen)}</a>;
+      // safe-url allowlist: http/https/mailto/# + relative. Block javascript:/data:/vbscript:.
+      const safe = safeHref(props.href);
+      if (!safe) return <span>{withCites(props.children, byKey, onOpen)}</span>;
+      return <a href={safe} target="_blank" rel="noopener noreferrer">{withCites(props.children, byKey, onOpen)}</a>;
     },
     p(props) {
       return <p>{withCites(props.children, byKey, onOpen)}</p>;

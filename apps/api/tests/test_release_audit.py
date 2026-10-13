@@ -1,7 +1,8 @@
 """Release-audit regression tests (2026-09-16 decisions).
 
 Covers the five Build-mode fixes:
-  1. Credentials demo IdP already gated (verified by code inspection of auth.ts).
+  1. Credentials demo IdP already gated (Clerk cutover: dev bypass lives in
+     apps/web/app/api/dev-token/route.ts + login page, strictly non-prod).
   2. Next.js headers() present (verified via node import in CI; see test below).
   3. Dockerfile $PORT honored (verified via dockerfile parse test).
   4. config.validate_prod_guards strictly requires -pooler in prod.
@@ -33,10 +34,12 @@ def _unsigned_token(sub: str) -> str:
 def _prod_settings(**over) -> Settings:
     base = {
         "env": "production",
-        "auth_secret_current": "c" * 40,
-        "jwt_issuer": "https://kromarag.vercel.app",
+        "jwt_issuer": "https://kromarag-prod.clerk.accounts.dev",
+        "jwt_audience": "kromarag-web",
         "cors_origins": ["https://kromarag.vercel.app"],
         "database_url": "postgresql+asyncpg://u:p@host-pooler.neon.tech:5432/db?sslmode=require",
+        "google_api_key": "test-google-key",
+        "groq_api_key": "test-groq-key",
     }
     base.update(over)
     return Settings(**base)

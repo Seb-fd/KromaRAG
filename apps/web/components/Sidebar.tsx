@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { signIn, signOut, useSession } from "next-auth/react";
-import { ROLES, useStore, type Role } from "@/lib/store";
+import { UserButton, useClerk } from "@clerk/nextjs";
+import { useStore } from "@/lib/store";
+import { getKromaToken, useKromaSession } from "@/lib/kroma-token";
 import { Documents } from "./Documents";
 
 function ago(ts: number): string {
@@ -16,12 +17,12 @@ function ago(ts: number): string {
 }
 
 export function Sidebar() {
-  const { data: session } = useSession();
+  const { email, roles } = useKromaSession();
+  const { signOut } = useClerk();
   const {
     theme,
     toggleTheme,
     role,
-    setRole,
     conversations,
     activeId,
     newConversation,
@@ -31,43 +32,16 @@ export function Sidebar() {
     syncThreads,
     threadsLoading,
     threadsError,
-    toast,
     apiOnline,
     apiVersion,
     setSidebarOpen,
   } = useStore();
   const [tab, setTab] = useState<"chats" | "docs">("chats");
-  const [switching, setSwitching] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
 
-  const jwt = session?.accessToken;
-
-  async function switchRole(r: Role) {
-    if (r === role) return;
-    if (session?.user?.provider && session.user.provider !== "credentials") {
-      toast("SSO-managed role — contact your directory admin", "error");
-      return;
-    }
-    setSwitching(true);
-    try {
-      const res = await signIn("credentials", {
-        email: session?.user?.email ?? "admin@kromarag.com",
-        role: r,
-        redirect: false,
-      });
-      if (res?.ok) {
-        setRole(r);
-        toast(
-          `Role switched to ${r} — JWT re-issued, enforcement is server-side`,
-          "success",
-        );
-      } else {
-        toast("Role switch failed", "error");
-      }
-    } finally {
-      setSwitching(false);
-    }
+  async function authedJwt(): Promise<string | undefined> {
+    return getKromaToken();
   }
 
   function beginRename(id: string, current: string) {
@@ -79,12 +53,11 @@ export function Sidebar() {
     if (!editingId) return;
     const title = draftTitle.trim();
     if (!title) {
-      toast("Title must not be blank", "error");
       return;
     }
     const id = editingId;
     setEditingId(null);
-    await renameThread(id, title, jwt);
+    await renameThread(id, title, await authedJwt());
   }
 
   return (
@@ -102,6 +75,7 @@ export function Sidebar() {
           className="rounded-lg"
           height={32}
           priority
+          unoptimized
           src="/logo.webp"
           width={32}
         />
@@ -158,7 +132,7 @@ export function Sidebar() {
               </button>
               <button
                 onClick={() => {
-                  void syncThreads(jwt);
+                  void (async () => syncThreads(await authedJwt()))();
                 }}
                 disabled={threadsLoading}
                 className="rounded-xl border px-2.5 text-sm ink-soft transition-opacity hover:opacity-70 disabled:opacity-40"
@@ -180,7 +154,7 @@ export function Sidebar() {
               <div
                 key={c.id}
                 onClick={() => {
-                  void selectConversation(c.id, jwt);
+                  void (async () => selectConversation(c.id, await authedJwt()))();
                 }}
                 className={`group cursor-pointer rounded-xl border px-3 py-2 transition-all ${c.id === activeId ? "border-kroma-500/60 bg-kroma-500/10" : "hover:bg-kroma-500/5"}`}
                 style={c.id === activeId ? {} : { borderColor: "transparent" }}
@@ -233,7 +207,7 @@ export function Sidebar() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        void deleteThread(c.id, jwt);
+                        void (async () => deleteThread(c.id, await authedJwt()))();
                       }}
                       className="rounded px-1 hover:text-red-500"
                       title="Delete"
@@ -266,36 +240,28 @@ export function Sidebar() {
               : "API offline — start apps/api"}
         </div>
         <div className="surface rounded-xl p-2.5">
-          <p
-            className="truncate text-[11px] font-medium"
-            title={session?.user?.email ?? ""}
-          >
-            {session?.user?.email}
-          </p>
-          <div className="mt-1.5 grid grid-cols-3 gap-1">
-            {ROLES.map((r) => (
-              <button
-                key={r}
-                disabled={switching}
-                onClick={() => switchRole(r)}
-                className={`rounded-md border px-1 py-1 text-[11px] font-semibold capitalize transition-all ${role === r ? "border-kroma-500/70 bg-kroma-500/15" : "opacity-60 hover:opacity-100"}`}
-                style={{
-                  borderColor: role === r ? undefined : "var(--border)",
-                }}
-                title={
-                  role === r ? "Current role" : `Switch to ${r} (re-issues JWT)`
-                }
-              >
-                {r}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <UserButton />
+            <p
+              className="min-w-0 flex-1 truncate text-[11px] font-medium"
+              title={email ?? ""}
+            >
+              {email ?? "Signed in"}
+            </p>
           </div>
+          <p className="mt-1.5 text-[11px] ink-soft">
+            Role: <span className="font-semibold capitalize">{role}</span>
+            {roles.length > 1 && (
+              <span className="ink-faint"> ({roles.join(", ")})</span>
+            )}
+          </p>
           <p className="mt-1 text-[10px] ink-faint">
-            Switching re-issues your JWT — FastAPI enforces it.
+            Roles are managed in the Clerk dashboard — contact an admin to
+            change yours. FastAPI enforces them server-side.
           </p>
         </div>
         <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
+          onClick={() => signOut({ redirectUrl: "/login" })}
           className="w-full rounded-lg border px-2 py-1.5 text-xs ink-soft transition-opacity hover:opacity-70"
           style={{ borderColor: "var(--border)" }}
         >

@@ -105,8 +105,9 @@ def outbound_headers(trace_id: str, span_id: str | None = None,
                      sampled: bool = True, tracestate: str | None = None) -> dict:
     """Headers to inject on outbound HTTP calls (spec 09 §3.1 rule 9). No I/O."""
     try:
-        from app.core.tracecontext import build_traceparent, truncate_tracestate
         import secrets as _secrets
+
+        from app.core.tracecontext import build_traceparent, truncate_tracestate
 
         sid = span_id or _secrets.token_hex(8)
         headers = {"traceparent": build_traceparent(trace_id, sid, sampled)}

@@ -318,8 +318,9 @@ async def list_documents(limit: int = 20, offset: int = 0,
     async with pool.acquire() as conn:
         try:
             rows = await conn.fetch(LIST_SQL, p.sub, list(p.roles or []), limit, offset)
-        except Exception:
-            return {"items": [], "total": 0}
+        except Exception as e:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                                {"code": "DB_UNAVAILABLE", "message": f"db error: {str(e)[:200]}"})
         try:
             total_all = await conn.fetchval(LIST_COUNT_SQL, p.sub, list(p.roles or []))
         except Exception:
@@ -387,7 +388,7 @@ async def patch_document(doc_id: str, body: dict,
         update = DocumentUpdate(**(body or {}))
     except Exception as e:
         raise HTTPException(HTTP_422,
-                            {"code": "VALIDATION", "message": str(e)})
+                            {"code": "VALIDATION", "message": str(e)[:500]})
     if not any([update.title, update.allowed_roles is not None,
                 update.owner_sub, update.uri]):
         raise HTTPException(HTTP_422,

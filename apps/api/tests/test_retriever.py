@@ -1,8 +1,8 @@
 """Phase 2 tests: hybrid search 0.7/0.3 + RBAC (specs/03 §4). No network/DB."""
 import pytest
 
-from app.services.retriever import HYBRID_SQL, build_hybrid_params, get_doc_metadata, hybrid_search, rerank_blended
 from app.schemas import Principal
+from app.services.retriever import HYBRID_SQL, build_hybrid_params, get_doc_metadata, hybrid_search, rerank_blended
 
 VEC = [0.02] * 768
 P = Principal(sub="u1", email="u1@x.com", roles=["viewer"])

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useSession } from "next-auth/react";
+import { KromaTokenBridge, clerkTemplateMissing, getKromaToken, useKromaSession } from "./kroma-token";
 import {
   listConversations as apiListConversations,
   getMessages as apiGetMessages,
@@ -125,7 +125,7 @@ function metaCreatedAt(s: string | null, fallback: number): number {
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const { data: session } = useSession();
+  const { isSignedIn } = useKromaSession();
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [role, setRoleState] = useState<Role>("viewer");
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -139,11 +139,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const booted = useRef(false);
 
-  // Latest JWT for async store methods (callers may also pass an explicit override).
-  const jwtRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    jwtRef.current = session?.accessToken;
-  }, [session?.accessToken]);
+  // Clerk template TTL is 60s — never cache the JWT. Every authed call
+  // resolves a fresh token per request via getKromaToken() (callers may
+  // also pass an explicit jwtOverride).
 
   // Read mirror for async callbacks (avoid stale closures).
   const convsRef = useRef<Conversation[]>([]);
@@ -217,7 +215,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   /* ── Server-authoritative sync (specs/06 §3.3, FR-02/FR-10) ── */
 
   const syncThreads = useCallback(async (jwtOverride?: string) => {
-    const jwt = jwtOverride ?? jwtRef.current;
+    const jwt = jwtOverride ?? (await getKromaToken());
     if (!jwt) return;
     setThreadsLoading(true);
     try {
@@ -272,7 +270,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       // Offline fallback: keep the local cache, surface a soft error only.
       if (e instanceof ApiError && e.code === "UNAUTHENTICATED") {
-        setThreadsError("Session expired — please sign in again");
+        setThreadsError(
+          clerkTemplateMissing()
+            ? 'Backend rejected token — create Clerk template "kromarag" (aud=kromarag-web) and check API JWT_ISSUER'
+            : "Session expired — please sign in again",
+        );
       } else if (e instanceof ApiError && e.code === "API_UNREACHABLE") {
         setThreadsError("API offline — showing cached threads");
       } else {
@@ -283,17 +285,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Auto-sync when the JWT becomes available (login / refresh). Server wins on conflict.
-  const accessToken = session?.accessToken;
+  // Auto-sync on sign-in. Server wins on conflict. Token itself is resolved
+  // per request inside syncThreads (60s template TTL — never cached).
   useEffect(() => {
-    if (!booted.current || !accessToken) return;
-    void syncThreads(accessToken);
-  }, [accessToken, syncThreads]);
+    if (!booted.current || !isSignedIn) return;
+    void syncThreads();
+  }, [isSignedIn, syncThreads]);
 
   const selectConversation = useCallback(async (id: string, jwtOverride?: string) => {
     setActiveId(id);
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, messagesLoading: true } : c)));
-    const jwt = jwtOverride ?? jwtRef.current;
+    const jwt = jwtOverride ?? (await getKromaToken());
     const known = convsRef.current.find((c) => c.id === id);
     if (!jwt || (known && (known.pending || !isServerThreadId(id)))) {
       // Local draft or offline: switch instantly, no fetch.
@@ -335,7 +337,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const known = convsRef.current.find((c) => c.id === convId);
     if (!known || known.messagesLoading || !known.hasMore || !known.nextBeforeId) return;
     if (known.pending || !isServerThreadId(convId)) return;
-    const jwt = jwtOverride ?? jwtRef.current;
+    const jwt = jwtOverride ?? (await getKromaToken());
     if (!jwt) return;
     setConversations((prev) => prev.map((c) => (c.id === convId ? { ...c, messagesLoading: true } : c)));
     try {
@@ -371,7 +373,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title: clean } : c)));
-    const jwt = jwtOverride ?? jwtRef.current;
+    const jwt = jwtOverride ?? (await getKromaToken());
     const known = convsRef.current.find((c) => c.id === id);
     if (!jwt || (known && (known.pending || !isServerThreadId(id)))) return; // local-only
     try {
@@ -388,7 +390,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [toast]);
 
   const deleteThread = useCallback(async (id: string, jwtOverride?: string) => {
-    const jwt = jwtOverride ?? jwtRef.current;
+    const jwt = jwtOverride ?? (await getKromaToken());
     const known = convsRef.current.find((c) => c.id === id);
     const isLocalOnly = !known || known.pending || !isServerThreadId(id);
     // Optimistic removal for instant UX.
@@ -414,7 +416,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [syncThreads, toast]);
 
   const createThread = useCallback(async (opts?: { title?: string; jwt?: string }) => {
-    const jwt = opts?.jwt ?? jwtRef.current;
+    const jwt = opts?.jwt ?? (await getKromaToken());
     const fallbackDraft = () => {
       const c: Conversation = {
         id: uid(), title: opts?.title?.trim() || "New conversation",
@@ -464,7 +466,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshThreadMeta = useCallback(async (id: string, jwtOverride?: string) => {
-    const jwt = jwtOverride ?? jwtRef.current;
+    const jwt = jwtOverride ?? (await getKromaToken());
     if (!jwt || !isServerThreadId(id)) return;
     try {
       const meta = await apiGetConversation(jwt, id);
@@ -533,7 +535,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     renameThread, deleteThread, deleteConversationAlias, adoptServerThread,
     refreshThreadMeta, toasts, inspector, apiOnline, apiVersion, sidebarOpen, toast]);
 
-  return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;
+  return (
+    <StoreCtx.Provider value={value}>
+      <KromaTokenBridge />
+      {children}
+    </StoreCtx.Provider>
+  );
 }
 
 export function useStore(): Ctx {

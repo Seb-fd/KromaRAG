@@ -5,7 +5,9 @@ statement_cache_size=0 (required), command_timeout from settings, pool recycle
 via max_inactive_connection_lifetime. /ready reports db=down on failure.
 """
 from __future__ import annotations
+
 import asyncpg
+
 from app.core.config import settings
 
 _pool: asyncpg.Pool | None = None

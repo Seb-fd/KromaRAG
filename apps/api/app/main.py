@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from app.api.v1.health import router as health_router
-from app.api.v1.metrics import router as metrics_router
 from app.api.v1.conversations import router as conversations_router
 from app.api.v1.documents import router as documents_router
+from app.api.v1.health import router as health_router
 from app.api.v1.ingest import router as ingest_router
+from app.api.v1.metrics import router as metrics_router
 from app.api.v1.query import router as query_router
 from app.core.config import settings
 from app.core.logging import setup_logging
@@ -34,6 +36,25 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="KromaRAG API", version="0.1.0", lifespan=lifespan, server_header=False)
+
+# Host-header guard (specs/08 §3.1): prod allowlist derived from CORS_ORIGINS
+# + Cloud Run / Vercel suffixes. Non-prod allows all (tests use http://test).
+if settings.is_prod:
+    try:
+        from urllib.parse import urlparse as _up
+
+        _hosts = set()
+        for _o in (settings.cors_origins or []):
+            try:
+                _h = (_up(_o).hostname or "").strip().lower()
+                if _h:
+                    _hosts.add(_h)
+            except Exception:
+                pass
+        _allow = sorted(_hosts | {"*.run.app", "*.vercel.app"})
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(_allow))
+    except Exception:
+        pass
 
 # Middleware stack (Starlette executes last-added first): SecurityHeaders
 # outermost so EVERY response (incl. 429/CORS/errors) carries headers;

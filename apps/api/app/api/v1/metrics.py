@@ -83,8 +83,6 @@ async def _require_admin(request: Request):
     try:
         principal = await _sec.get_current_principal(creds)
     except Exception as e:
-        code = getattr(getattr(e, "detail", None), "get", lambda *_: None)("code") \
-            if hasattr(getattr(e, "detail", None), "get", None) else None
         status = getattr(e, "status_code", 401)
         detail = getattr(e, "detail", None)
         if isinstance(detail, dict) and "code" in detail:

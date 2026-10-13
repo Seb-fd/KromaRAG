@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -79,7 +79,7 @@ class FakeConn:
 
     def _now(self):
         self._seq += 1
-        base = datetime.now(timezone.utc)
+        base = datetime.now(UTC)
         return base.replace(microsecond=(base.microsecond + self._seq * 997) % 1000000)
 
     def transaction(self):

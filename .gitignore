@@ -17,7 +17,7 @@ __pycache__/
 .venv/
 venv/
 .uv/
-uv.lock
+# uv.lock is COMMITTED for reproducible prod builds (specs/08). Do not ignore.
 *.egg-info/
 .pytest_cache/
 .mypy_cache/

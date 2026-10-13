@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSession } from "next-auth/react";
+import { getKromaToken, useKromaSession } from "@/lib/kroma-token";
 import {
   ApiError,
   MAX_UPLOAD_BYTES, SUPPORTED_MIMES, archiveDocument, getDocumentStatus, ingestDocument,
@@ -27,19 +27,7 @@ function extAllowed(name: string): boolean {
   return n.endsWith(".txt") || n.endsWith(".md") || n.endsWith(".markdown") || n.endsWith(".pdf");
 }
 
-/** Best-effort `sub` extraction for UI gating only (server is authoritative). */
-function decodeJwtSub(jwt: string | undefined): string | null {
-  if (!jwt) return null;
-  try {
-    const payload = jwt.split(".")[1];
-    if (!payload) return null;
-    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
-    const sub = json?.sub;
-    return typeof sub === "string" && sub ? sub : null;
-  } catch {
-    return null;
-  }
-}
+/** UI gating only (server is authoritative): Clerk user id == backend `sub`. */
 
 function friendlyDocError(e: unknown): string {
   if (e instanceof ApiError) {
@@ -89,7 +77,7 @@ function StatusBadge({ status }: { status: DocStatus }) {
 
 /** Document lifecycle (specs/07 §3.3): binary upload + status badges + gated actions. */
 export function Documents() {
-  const { data: session } = useSession();
+  const { user } = useKromaSession();
   const { toast, canUpload, role } = useStore();
   const [jobs, setJobs] = useState<UploadJob[]>([]);
   const [docs, setDocs] = useState<DocumentDetail[]>([]);
@@ -106,8 +94,7 @@ export function Documents() {
   const mountedRef = useRef(true);
   const pollingRef = useRef<Set<string>>(new Set());
 
-  const jwt = session?.accessToken;
-  const mySub = decodeJwtSub(jwt);
+  const mySub = user?.id ?? null;
   const isAdmin = role === "admin";
 
   useEffect(() => {
@@ -127,6 +114,7 @@ export function Documents() {
     });
 
   const refresh = useCallback(async () => {
+    const jwt = await getKromaToken();
     if (!jwt) return;
     try {
       const r = await listDocuments(jwt, 30, 0, {
@@ -144,19 +132,19 @@ export function Documents() {
       }
       /* offline backend — list stays empty, upload errors surface per-job */
     }
-  }, [jwt, statusFilter, q]);
+  }, [statusFilter, q]);
 
-  // Fetch-on-mount + refetch when the JWT or filters change. Server list is authoritative.
+  // Fetch-on-mount + refetch when filters change. Server list is authoritative.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- refresh() only setStates after the async fetch resolves
   useEffect(() => { refresh(); }, [refresh]);
 
   // While any visible doc is in-flight, revalidate the list so badges flip without manual refresh.
   const hasInflight = docs.some((d) => d.status === "pending" || d.status === "indexing");
   useEffect(() => {
-    if (!hasInflight || !jwt) return;
+    if (!hasInflight) return;
     const t = setInterval(() => { refresh(); }, 3000);
     return () => clearInterval(t);
-  }, [hasInflight, jwt, refresh]);
+  }, [hasInflight, refresh]);
 
   const pollUntilTerminal = useCallback(async (
     docId: string, jobId: string | null, jwtAtCall: string | undefined,
@@ -207,11 +195,11 @@ export function Documents() {
   }, [refresh]);
 
   async function uploadOne(title: string, content: string | undefined, docUrl: string | undefined, mime: string) {
-    if (!jwt) {
+    const jwtAtCall = await getKromaToken();
+    if (!jwtAtCall) {
       toast("Sign in to ingest documents", "error");
       return;
     }
-    const jwtAtCall = jwt;
     const id = newLocalId();
     setJobs((js) => [{ id, label: title, state: "uploading" as const, detail: "Embedding & indexing…", doc_id: null }, ...js].slice(0, 5));
     try {
@@ -234,14 +222,14 @@ export function Documents() {
 
   async function handleFiles(files: FileList | File[]) {
     if (!canUpload) {
-      toast("Ingestion needs the editor role — switch role below", "error");
+      toast("Ingestion needs the editor role — ask an admin to grant it in Clerk", "error");
       return;
     }
-    if (!jwt) {
+    const jwtAtCall = await getKromaToken();
+    if (!jwtAtCall) {
       toast("Sign in to ingest documents", "error");
       return;
     }
-    const jwtAtCall = jwt;
     for (const f of Array.from(files)) {
       if (!extAllowed(f.name)) {
         toast(`Unsupported type: ${f.name} (.txt / .md / .pdf only)`, "error");
@@ -293,7 +281,7 @@ export function Documents() {
     e.preventDefault();
     if (!url.trim()) return;
     if (!canUpload) {
-      toast("Ingestion needs the editor role — switch role below", "error");
+      toast("Ingestion needs the editor role — ask an admin to grant it in Clerk", "error");
       return;
     }
     await uploadOne(urlTitle.trim() || url.trim(), undefined, url.trim(), "text/plain");
@@ -303,7 +291,7 @@ export function Documents() {
 
   /** (owner_sub == me && editor+) || admin. Empty owner falls back to role gates. */
   function canManage(d: DocumentDetail): boolean {
-    if (!jwt) return false;
+    if (!mySub) return false;
     if (isAdmin) return true;
     if (!d.owner_sub) return canUpload;
     return d.owner_sub === mySub && canUpload;
@@ -311,15 +299,15 @@ export function Documents() {
 
   /** Purge needs ownership only (any role) or admin. */
   function canPurge(d: DocumentDetail): boolean {
-    if (!jwt) return false;
+    if (!mySub) return false;
     if (isAdmin) return true;
     if (!d.owner_sub) return canUpload;
     return d.owner_sub === mySub;
   }
 
   async function handleReindex(d: DocumentDetail) {
-    if (!jwt) { toast("Sign in first", "error"); return; }
-    const jwtAtCall = jwt;
+    const jwtAtCall = await getKromaToken();
+    if (!jwtAtCall) { toast("Sign in first", "error"); return; }
     const jobId = newLocalId();
     markBusy(d.id, true);
     try {
@@ -335,6 +323,7 @@ export function Documents() {
   }
 
   async function handleArchive(d: DocumentDetail) {
+    const jwt = await getKromaToken();
     if (!jwt) { toast("Sign in first", "error"); return; }
     markBusy(d.id, true);
     try {
@@ -354,6 +343,7 @@ export function Documents() {
   }
 
   async function handlePurge(d: DocumentDetail) {
+    const jwt = await getKromaToken();
     if (!jwt) { toast("Sign in first", "error"); return; }
     if (!window.confirm(`Purge “${d.title}” irreversibly? Chunks + shares are deleted (CASCADE).`)) return;
     markBusy(d.id, true);

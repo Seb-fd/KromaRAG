@@ -136,9 +136,7 @@ def route_template(method: str, path: str) -> str:
         for seg in p.split("/"):
             if not seg:
                 continue
-            if _UUID_RE.match(seg) or _NUM_RE.match(seg):
-                parts.append("{id}")
-            elif len(seg) == 32 and all(c in "0123456789abcdefABCDEF" for c in seg):
+            if _UUID_RE.match(seg) or _NUM_RE.match(seg) or len(seg) == 32 and all(c in "0123456789abcdefABCDEF" for c in seg):
                 parts.append("{id}")
             else:
                 parts.append(seg)
