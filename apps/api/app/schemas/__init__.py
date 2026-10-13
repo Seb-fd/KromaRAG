@@ -1,7 +1,8 @@
 """Shared Pydantic schemas (specs/02 §2, specs/06 §2.3)."""
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
+
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
@@ -28,11 +29,36 @@ class ChunkResult(BaseModel):
 
 
 class IngestRequest(BaseModel):
-    title: str
-    content: str | None = None
-    url: str | None = None
+    title: str = Field(min_length=1, max_length=300)
+    content: str | None = Field(default=None, max_length=200_000)
+    url: str | None = Field(default=None, max_length=2000)
     mime: str = "text/plain"
     allowed_roles: list[str] = ["viewer"]
+
+    @field_validator("title")
+    @classmethod
+    def _strip_title(cls, v: str) -> str:
+        t = v.strip()
+        if not t:
+            raise ValueError("title must not be blank")
+        return t
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        s = v.strip()
+        if not s:
+            raise ValueError("url must not be blank")
+        if len(s) > 2000:
+            raise ValueError("url too long")
+        from urllib.parse import urlparse as _up
+
+        scheme = _up(s).scheme.lower()
+        if scheme not in ("http", "https"):
+            raise ValueError("URL_FETCH_BLOCKED: scheme not allowed")
+        return s
 
 
 class DocMeta(BaseModel):
@@ -91,8 +117,6 @@ class MessageList(BaseModel):
 
 # ── Document lifecycle (specs/07 §2.4) ──
 
-from typing import Any
-
 DOC_STATUSES = ("pending", "indexing", "indexed", "failed", "archived")
 
 
@@ -126,6 +150,20 @@ class DocumentUpdate(BaseModel):
     allowed_roles: list[str] | None = None  # ⊆ {admin,editor,viewer}; [] = owner-only
     owner_sub: str | None = None  # admin-only; non-admin supply → 404 (leak-safe)
     uri: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("uri")
+    @classmethod
+    def _validate_uri(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        s = v.strip()
+        if not s:
+            raise ValueError("uri must not be blank")
+        from urllib.parse import urlparse as _up
+
+        if _up(s).scheme.lower() not in ("http", "https"):
+            raise ValueError("URL_FETCH_BLOCKED: scheme not allowed")
+        return s
 
 
 class DocumentList(BaseModel):

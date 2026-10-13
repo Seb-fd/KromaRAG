@@ -23,6 +23,7 @@ for (const f of need) {
 }
 const env = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
 if (!env.includes('DATABASE_URL=postgresql+asyncpg://')) { console.error('FAIL: DATABASE_URL must be generic postgresql+asyncpg://'); fail = 1; }
+if (!/^ENV=/m.test(env)) { console.error('FAIL: .env.example must document ENV (development/production switch, specs/08 §6)'); fail = 1; }
 if (/SUPABASE_(URL|ANON|SERVICE)/.test(env)) { console.error('FAIL: .env.example must not hard-depend on Supabase keys'); fail = 1; }
 const c2 = fs.readFileSync(path.join(root, 'specs/02-api-contracts.md'), 'utf8');
 for (const k of ['"sub"', '"roles"', 'JWT_ISSUER', 'get_current_principal']) {
@@ -38,9 +39,9 @@ const c7 = fs.readFileSync(path.join(root, 'specs/07_document_lifecycle_mgmt_spe
 for (const k of ['reindex', 'archived', '003']) {
   if (!c7.includes(k)) { console.error(`FAIL: 07_document_lifecycle_mgmt_spec.md missing ${k}`); fail = 1; }
 }
-// Spec 08 — production hardening & deployment deltas present
+// Spec 08 — production hardening & deployment deltas present (Clerk cutover)
 const c8 = fs.readFileSync(path.join(root, 'specs/08_production_hardening_and_deployment_spec.md'), 'utf8');
-for (const k of ['/healthz', '/readyz', 'RATE_LIMITED', 'DB_UNAVAILABLE', 'AUTH_SECRET_CURRENT', 'pgBouncer', '001', '002', '003', 'gemini-3.6-flash', 'openai/gpt-oss-120b']) {
+for (const k of ['/healthz', '/readyz', 'RATE_LIMITED', 'DB_UNAVAILABLE', 'protect()', 'clerk', 'kromarag', 'pgBouncer', '001', '002', '003', 'gemini-3.6-flash', 'openai/gpt-oss-120b']) {
   if (!c8.includes(k)) { console.error(`FAIL: 08_production_hardening_and_deployment_spec.md missing ${k}`); fail = 1; }
 }
 // Spec 09 — telemetry & operations deltas present

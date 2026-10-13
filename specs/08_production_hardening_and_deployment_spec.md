@@ -5,7 +5,7 @@
 - **Status:** Draft (Build mode, approved 2026-09-16)
 - **Refs:** `01 §1–§5` (topology, SSE/async, `kroma_*` schema, RBAC, NFRs), `02 §1–§6` (endpoints, Pydantic, SSE, errors, JWT, versioning), `03 §5–§6` (LangGraph nodes, fallback, knobs), `04 §1–§4` (LangSmith, costs, evals, logs/alerts), `05` (phases, exit discipline), `06 §3.1–§4.6` (leak-safe `404`, atomic writes, idempotency), `07 §2.2–§4.4` (lifecycle states, `003`, retriever `indexed` gate, purge order)
 - **Code truth:** `app/main.py:20-43`, `app/core/config.py:6-61`, `app/core/security.py:13-77`, `app/core/logging.py:1-10`, `app/core/costs.py`, `app/services/db.py:9-44`, `app/services/migrate.py:13-43`, `app/agent/llm.py:43-162`, `app/api/v1/health.py`, `apps/api/Dockerfile:1-7`, `apps/api/pyproject.toml:1-37`, `apps/web/next.config.js:1-6`, `apps/web/proxy.ts`, `.env.example:1-42`, `migrations/001_kroma_schema.sql`, `migrations/002_conversations_history.sql`, `migrations/003_kroma_documents_lifecycle.sql`, `scripts/check-specs.js:1-25`
-- **Decisions (approved 2026-09-16):** (1) **Cloud Run + Vercel** normative; Docker multi-stage as build artifact only (no separate Render target); (2) **Tiered rate limits** — `POST /query 100/min`, `POST /ingest|upload 20/min`, unauth/IP `10/min`, all `429 + Retry-After`; (3) **Health aliases** — keep `/health` + `/ready`, add `/healthz` + `/readyz` same handlers (non-breaking); (4) **Dual-secret overlap rotation** — sign with `AUTH_SECRET_CURRENT` only, verify `CURRENT then PREVIOUS`, JWKS `kid` with prev-set fallback, 24–48h window.
+- **Decisions (approved 2026-09-16):** (1) **Cloud Run + Vercel** normative; Docker multi-stage as build artifact only (no separate Render target); (2) **Tiered rate limits** — `POST /query 100/min`, `POST /ingest|upload 20/min`, unauth/IP `10/min`, all `429 + Retry-After`; (3) **Health aliases** — keep `/health` + `/ready`, add `/healthz` + `/readyz` same handlers (non-breaking); (4) **Clerk identity + kid-rollover** — Clerk `kromarag-dev` / `kromarag-prod` apps issue session JWTs (template `kromarag`: email+roles+aud, 60s); backend verifies `RS256` via JWKS `kid` with current-set + cached-prev-set fallback (no operator action; JWKS cache 600s). HS256 dev-bypass is non-prod only (prod rejects kid-less tokens outright).
 
 ---
 
@@ -22,8 +22,9 @@ Ship KromaRAG to production without changing any frozen product contract: same S
 | SEC-01 | API enforces **tiered rate limits** (§3.2): `POST /api/v1/query` 100 req/min per authenticated `sub` (admin elevated, §3.2); `POST /api/v1/ingest` + `POST /api/v1/documents/upload` + `POST /{id}/reindex` 20 req/min per `sub`; unauthenticated + auth-failure paths 10 req/min per IP. Breach → `429 {"code":"RATE_LIMITED"}` + `Retry-After` + `X-RateLimit-*` headers. |
 | SEC-02 | **CORS** is exact-allowlist only (§3.1): prod `CORS_ORIGINS=https://kromarag.vercel.app` (comma-separated additions only). No `*` with `allow_credentials`. Preflight cached `max_age=600`. Non-listed origin → no `Access-Control-Allow-Origin` (browser blocks; server still returns body for non-browser callers). |
 | SEC-03 | **Security headers** on every API response (§3.1): `Strict-Transport-Security`, `Content-Security-Policy` (restrictive, API carries no inline scripts), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`. Web (`next.config.js headers()`) adds same + `Permissions-Policy` + `X-DNS-Prefetch-Control`. Header absence is a release-blocker. |
-| SEC-04 | **Secrets never in code/logs/images** (§6): all prod secrets via Cloud Run Secret Manager / Vercel Encrypted Env only. `DATABASE_URL`, `*_API_KEY`, `AUTH_SECRET_*` never logged, never echoed in `/health*`/`/ready*`, never baked into Docker layers. Boot **fail-closed**: refuse to serve traffic in `ENV=production` when any required secret is missing or still a documented default (`change-me*`). |
-| SEC-05 | **JWT rotation without downtime** (§3.3): sign exclusively with `AUTH_SECRET_CURRENT`; verify `CURRENT → PREVIOUS`; JWKS path verifies by `kid` with current-set + cached-prev-set fallback. Rotation window 24–48h. Clock skew `±60s` retained (`02 §5`). |
+| SEC-04 | **Secrets never in code/logs/images** (§6): all prod secrets via Cloud Run Secret Manager / Vercel Encrypted Env only. `DATABASE_URL`, `*_API_KEY`, `CLERK_SECRET_KEY` never logged, never echoed in `/health*`/`/ready*`, never baked into Docker layers. Boot **fail-closed**: refuse to serve traffic in `ENV=production` when any required secret is missing or the Clerk issuer is not https/non-localhost. |
+| SEC-05 | **JWT rollover without downtime** (§3.3): Clerk issues (template `kromarag`); backend verifies by JWKS `kid` with current-set + cached-prev-set fallback (no operator action). Clock skew `±60s` retained (`02 §5`). |
+| SEC-06 | **URL ingest SSRF guard** (§4.5): `fetch_url_text` allows `http/https` only, max 3 redirects, `connect=3s/read=15s` timeout, `URL_MAX_BYTES=50000` cap. Host must resolve to public IP — private/loopback/link-local/multicast/reserved ranges + `169.254.169.254` IMDS denied. DNS rebinding checked on every redirect hop. Violation → `422 URL_FETCH_BLOCKED` (no fetch), never a stack trace. |
 | RES-01 | **Timeout budget** enforced end-to-end (§4.1): per-query ceiling `LLM_TIMEOUT_S=25` decomposed `embed ≤8s + retriever SQL ≤3s + primary LLM ≤15s attempt`; fallback attempt `≤12s` inside SSE stream window. Any hop exceeding its slice aborts that hop only and triggers the defined fallback, never a hung stream. |
 | RES-02 | **LLM fallback mechanics** deterministic (§4.2): Gemini `gemini-3.6-flash` primary → Groq `openai/gpt-oss-120b` on `timeout / 429 / 404-NOT_FOUND / 5xx` (retryable `LLMError` only, exactly one fallback attempt). Success sets `fallback_used=true` + `event: error {code:LLM_TIMEOUT|LLM_RATE_LIMIT|LLM_ERROR}` + `ERROR`-level structured log. Both providers down → friendly `503` SSE triple (`source:[] + error + done`) with pair persisted per `06 §4.2`. |
 | RES-03 | **DB resilience via pooling** (§2.4): prod connects **only** through Neon pooled host (`-pooler`, `sslmode=require`) with `asyncpg min=2, max=20, command_timeout=10s, statement_cache_size=0` (pgBouncer transaction mode) + `pool_recycle=300s`. Pool exhaustion → `503 {code:DB_UNAVAILABLE}` + `Retry-After: 5`, never a stack trace. `readyz` fails while pool is down so the orchestrator pulls the instance. |
@@ -39,7 +40,7 @@ Ship KromaRAG to production without changing any frozen product contract: same S
 - **US-1 Safe launch:** As an operator, I deploy the multi-stage images + run `001→002→003` against pooled Neon so the service passes `healthz/readyz` and serves traffic with zero contract breakage.
 - **US-2 Abuse survival:** As an operator, a scraper hammering `/query` gets `429 + Retry-After` while legitimate users stay under p95 budgets.
 - **US-3 Provider outage:** As a viewer, when Gemini times out I still get a Groq-backed streamed answer annotated `fallback_used=true` with no duplicate history write.
-- **US-4 Secret roll:** As a security engineer, I rotate `AUTH_SECRET` and JWKS keys during business hours with zero forced logouts inside the 24–48h overlap.
+- **US-4 Key rollover:** As a security engineer, Clerk signing-key rotations pass with zero forced logouts (JWKS cache + prev-set fallback; no operator action).
 - **US-5 Fast diagnosis:** As an on-call, a `readyz 503` + JSON log with `trace_id` tells me in under a minute whether the fault is DB, pool, or LLM.
 
 ### 1.4 Non-Functional Requirements
@@ -64,14 +65,21 @@ Ship KromaRAG to production without changing any frozen product contract: same S
                            HTTPS                    HTTPS (pooled, sslmode=require)
 ┌──────────────────┐  ┌──────────────────┐  ┌─────────────────────┐  ┌──────────────┐
 │ Vercel (web)     │  │ Cloud Run (api)  │  │ Neon Postgres       │  │ Providers    │
-│ Next.js 14       │─►│ FastAPI + Uvicorn│─►│ pgBouncer (txn)     │  │ Gemini 3.6   │
+│ Next.js 16       │─►│ FastAPI + Uvicorn│─►│ pgBouncer (txn)     │  │ Gemini 3.6   │
 │ Edge CDN cache   │  │ min-inst=1       │  │ kroma_* + VECTOR    │  │ Groq 120b    │
-│ Auth.js JWT sign │  │ /healthz /readyz │  │ 768 + ivfflat + GIN │  │ LangSmith    │
-│ CURRENT secret   │◄─│ verify CURR+PREV │  │ PITR + pooled host  │  │ (background) │
+│ Clerk session    │  │ /healthz /readyz │  │ 768 + ivfflat + GIN │  │ LangSmith    │
+│ template kromarag│◄─│ verify kid+prev  │  │ PITR + pooled host  │  │ (background) │
 └──────────────────┘  └──────────────────┘  └─────────────────────┘  └──────────────┘
+         ▲
+         │ issues (email+roles+aud, 60s)
+┌──────────────────┐
+│ Clerk            │
+│ kromarag-dev     │
+│ kromarag-prod    │
+└──────────────────┘
 ```
 
-- **Frontend:** Vercel project `kromarag-web`, `NEXT_PUBLIC_API_URL=https://<cloud-run-host>`, Auth.js signs with `AUTH_SECRET_CURRENT` (`HS256`, `kid=current` when JWKS mode). Preview deployments point at staging Cloud Run + staging Neon branch (never prod DB).
+- **Frontend:** Vercel project `kromarag-web`, `NEXT_PUBLIC_API_URL=https://<cloud-run-host>`, Clerk `kromarag-dev` (preview/dev) / `kromarag-prod` (prod) apps issue session JWTs via the `kromarag` template (separate keys; never share). Preview deployments point at staging Cloud Run + staging Neon branch (never prod DB).
 - **Backend:** Cloud Run service `kromarag-api`, region pinned (e.g. `europe-west1`), `concurrency=80`, `timeout=300s`, `min-instances=1`, `max-instances=<quota with alert>`, `CPU=2, memory=2Gi` baseline. Secrets mounted from Secret Manager as env (never in image).
 - **DB:** Neon project with `main` (prod) + `staging` branch; prod connection **only** via pooled host (`*-pooler.*.neon.tech`, `sslmode=require`). Direct (non-pooled) host reserved for `migrate.py` one-shot jobs and `ANALYZE` maintenance.
 - **Docker role:** multi-stage images are the reproducible build artifact for Cloud Run deploy, local prod-parity (`docker compose up --build`), and rollback (immutable tag per git SHA). Vercel builds Web natively; `web/Dockerfile` is fallback for Docker hosts only.
@@ -110,7 +118,7 @@ Rules:
 2. **Entrypoint order (normative):** `migrate (001→002→003, §2.4) → pool warmup probe (`/readyz` loop ≤60s) → exec CMD`. Migration failure aborts boot (CrashLoop, never serve stale schema).
 3. **Workers:** Cloud Run = exactly `--workers 1` per instance (horizontal scale provides concurrency). Gunicorn alternative permitted **only** for non-Cloud-Run Docker hosts: `gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w $WEB_CONCURRENCY --timeout 120 --graceful-timeout 30` with `WEB_CONCURRENCY=2×CPU+1`.
 4. **Signals:** `STOPSIGNAL SIGTERM`, graceful drain `30s`; in-flight SSE streams complete `done` before shutdown when within drain window.
-5. **Tags:** immutable `:git-<sha>` + floating `:prod`; rollback = redeploy prior `:git-<sha>` (no `latest` in prod).
+5. **Tags:** immutable `:git-<sha>` + floating `:prod`; rollback = redeploy prior `:git-<sha>` (no `latest` in prod). `--source` deploys (no registry) carry the SHA as an immutable Cloud Run `--revision-suffix git-<sha>` instead; traffic shift is the floating pointer (`scripts/deploy/10-cloudrun-prod.sh`, `11-cloudrun-staging.sh`).
 
 **Frontend `apps/web/Dockerfile` (fallback artifact; Vercel is primary):**
 
@@ -142,7 +150,7 @@ Requires `next.config.js` `output: "standalone"` (additive; Vercel ignores it sa
 
 ### 2.3 Web Topology — Vercel + CDN / Caching Strategy (Next.js 14)
 
-- **Routes:** `/login` (Auth.js), `/` chat (client SSE reader), `/documents` upload/list, `/api/health` lightweight (for container fallback only; prod traffic calls Cloud Run directly via `NEXT_PUBLIC_API_URL`, never Next.js-rewritten).
+- **Routes:** `/login` (Clerk `<SignIn>` + dev-only bypass form in non-prod), `/` chat (client SSE reader), `/documents` upload/list, `/api/dev-token` (dev-only HS256 mint, 404 in prod), `/api/health` lightweight (for container fallback only; prod traffic calls Cloud Run directly via `NEXT_PUBLIC_API_URL`, never Next.js-rewritten).
 - **`next.config.js` additions (additive):**
   ```js
   // output: "standalone" (Docker fallback), headers() → HSTS/CSP/nosniff/deny-frame (mirrors §3.1),
@@ -157,7 +165,7 @@ Requires `next.config.js` `output: "standalone"` (additive; Vercel ignores it sa
   | Document list reads | ISR `revalidate=30s` client-side `stale-while-revalidate` only; mutations (`upload/patch/reindex/archive/purge`) invalidate client cache immediately |
   | API `/api/v1/*` | `Cache-Control: no-store` always; SSE `Cache-Control: no-cache` + `: ping` 15s retained (`02 §3`) |
 
-- **Env:** `NEXT_PUBLIC_API_URL`, `AUTH_SECRET_CURRENT` (+`PREVIOUS` for overlap verify on `auth.ts` decode path), `NEXTAUTH_URL=https://kromarag.vercel.app`. Preview envs use staging values via Vercel Environment scoping (Production / Preview / Development never cross-wired).
+- **Env:** `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (per-env Clerk app key) + server-only `CLERK_SECRET_KEY`. Preview envs use staging API + Clerk dev-app values via Vercel Environment scoping (Production / Preview / Development never cross-wired). No `AUTH_SECRET*` / Google OAuth client on Vercel (Google SSO lives in the Clerk dashboard).
 
 ### 2.4 Database Operations — Neon Production Setup
 
@@ -188,7 +196,7 @@ env: str = "development"                    # ENV — "production" flips fail-cl
 web_concurrency: int = 1                    # WEB_CONCURRENCY — 1 on Cloud Run; 2*CPU+1 for gunicorn hosts
 pool_min_size: int = 2                      # POOL_MIN_SIZE (prod 2; dev 1)
 pool_max_size: int = 20                     # POOL_MAX_SIZE (prod 20; dev 10)
-pool_command_timeout: int = 10              # POOL_COMMAND_TIMEOUT_S
+pool_command_timeout: int = 10              # POOL_COMMAND_TIMEOUT (effective env name)
 rate_limit_query_per_min: int = 100         # RATE_LIMIT_QUERY_PER_MIN
 rate_limit_ingest_per_min: int = 20         # RATE_LIMIT_INGEST_PER_MIN (+ upload/reindex share bucket)
 rate_limit_unauth_per_min: int = 10         # RATE_LIMIT_UNAUTH_PER_MIN (IP-keyed)
@@ -197,15 +205,17 @@ llm_timeout_s: int = 25                     # unchanged (03 §6)
 llm_fallback_timeout_s: int = 12            # LLM_FALLBACK_TIMEOUT_S — Groq attempt ceiling
 embed_timeout_s: int = 8                    # EMBED_TIMEOUT_S — per-batch ceiling
 retriever_timeout_ms: int = 3000            # RETRIEVER_TIMEOUT_MS — SET LOCAL statement_timeout
-auth_secret_current: str = ""               # AUTH_SECRET_CURRENT — signs (prod required)
-auth_secret_previous: str = ""              # AUTH_SECRET_PREVIOUS — verifies only (rotation overlap)
+clerk_jwks_url: str = ""                    # CLERK_JWKS_URL — explicit JWKS pin (default derives {JWT_ISSUER}/.well-known/jwks.json)
+# AUTH_SECRET* are dev-only now (HS256 dev-bypass, non-prod): auth_secret /
+# auth_secret_current / auth_secret_previous kept for local mint only; prod
+# requires the Clerk JWT_ISSUER (https + non-localhost) instead.
 ```
 
 ---
 
 ## 3. System Interface & Contracts
 
-Base `{API_URL}`. Auth `Authorization: Bearer <Auth.js JWT>` (`viewer+` unless noted). Errors `02 §4` shape `{"detail":{"code","message"}}` + `X-Trace-Id` on **every** response including `429/503`. Leak-safe `404` patterns from `06`/`07` unchanged.
+Base `{API_URL}`. Auth `Authorization: Bearer <Clerk JWT (template kromarag)>` (`viewer+` unless noted). Errors `02 §4` shape `{"detail":{"code","message"}}` + `X-Trace-Id` on **every** response including `429/503`. Leak-safe `404` patterns from `06`/`07` unchanged.
 
 ### 3.1 Security Middleware Contract (normative order)
 
@@ -239,20 +249,21 @@ Request path: `TrustedHost → CORS → RateLimit → Auth → Route`. Response 
 | `read` | `sub` | 300 req | 60s sliding | `GET /documents*`, `GET /conversations*` |
 | `unauth` | client IP | 10 req | 60s sliding | any `401`-path + `/login`-adjacent API abuse |
 
-- Algorithm: sliding-window counter (in-memory Phase 1, Redis-compatible interface deferred — signature `check_limit(key, limit, window_s) -> (allowed, remaining, reset_s)` so the backend swap is non-breaking).
+- Algorithm: sliding-window counter (in-memory Phase 1, Redis-compatible interface deferred — signature `check_limit(key, limit, window_s) -> (allowed, remaining, reset_s)` so the backend swap is non-breaking). Multi-instance note: effective global limit = `per-instance limit × instances`; cap Cloud Run `max-instances ≤ 3` or lower limits to compensate until Redis lands.
 - Breach response: `429 {"detail":{"code":"RATE_LIMITED","message":"rate limit exceeded, retry in Ns"}}` + `Retry-After: <s>` + `X-RateLimit-Limit/Remaining/Reset`. The `Retry-After` value equals `reset_s` (never `0`). Rate-limited requests MUST still emit `X-Trace-Id` and a structured `WARNING` log (no PII).
 - Auth runs **before** per-`sub` bucketing: missing/invalid JWT consumes `unauth` (IP) bucket and returns `401` until that bucket exhausts, then `429` (prevents credential-stuffing amplification from learning `401` vs `429` oracle — both carry identical `X-Trace-Id` discipline).
 - `GET /health*` + `/ready*` are **exempt** from rate limits (probe traffic must never `429`).
 
-### 3.3 JWT & Secret-Rotation Contract (extends `02 §5`, non-breaking)
+### 3.3 JWT & Kid-Rollover Contract (extends `02 §5`, non-breaking)
 
-1. **Issuance (Web `auth.ts`):** sign with `AUTH_SECRET_CURRENT` (`HS256`), `kid: "current"` header when JWKS mode enabled; claims unchanged (`sub`, `email?`, `roles[]`, `iss == JWT_ISSUER=https://kromarag.vercel.app`, `aud == JWT_AUDIENCE=kromarag-web`, `exp` short-lived `≤ 1h`, `iat`, `jti`). RS256 path uses active JWKS private key with `kid` = key id.
+1. **Issuance (Clerk `kromarag-dev` / `kromarag-prod` apps):** Clerk issues session JWTs with the custom `kromarag` template — `email={{user.primary_email_address}}`, `roles={{user.public_metadata.roles}}`, `aud=kromarag-web`, lifetime 60s. Roles live in `publicMetadata.roles` (Dashboard → Users → Metadata; default `["viewer"]`); allowed redirect origins cover prod + staging + `http://localhost:3000`; Google OAuth is enabled in the Clerk dashboard (no `GOOGLE_CLIENT_ID/SECRET` on Vercel). The browser resolves a fresh token per request (`getToken({ template: "kromarag" })`); the edge (`proxy.ts` `protect()`) gates pages while `/api/*` stays public at the edge (FastAPI enforces auth itself).
 2. **Verification (API `security.py`):**
-   - Parse `Bearer`; select candidate keys: `[CURRENT]` then `[PREVIOUS]` (HS256) — accept if **either** verifies `sig + iss + aud + exp(±60s)`. JWKS path: fetch `{JWT_ISSUER}/.well-known/jwks.json` (cache 600s), match `kid`; on `kid` miss, refresh once then try cached **prev-set** before rejecting (covers propagation lag).
-   - Normalize roles exactly as today (`ALLOWED_ROLES`, default `["viewer"]`, missing `sub` → `401`). Rotation MUST NOT alter role semantics.
-   - Emit `WARNING` log with `kid` + `key_generation=current|previous` (no secret material) so operators can confirm drain of `previous` before decommission.
-3. **Rotation runbook (normative steps):** (a) generate new secret → set as `PREVIOUS=current-old, CURRENT=new` in Secret Manager (both mounted); (b) wait 24–48h (covers max JWT TTL + clock skew); (c) confirm `previous`-signed verifications ≈ 0 via logs; (d) drop old `PREVIOUS`. Rollback = swap back within window (no code deploy needed).
-4. **Boot guard:** `ENV=production` + (`AUTH_SECRET_CURRENT` empty or `<32 chars` or equal to documented default) → `RuntimeError` at startup with `ERROR` log `auth_secret_invalid` (fail-closed, never serve).
+   - Parse `Bearer`; fetch `{JWT_ISSUER}/.well-known/jwks.json` (explicit `CLERK_JWKS_URL` / `JWT_JWKS_URL` wins; cache 600s), match `kid`; on `kid` miss, refresh once then try the cached **prev-set** before rejecting (covers propagation lag). HS256 dev-bypass verifies only when NOT prod; prod rejects kid-less tokens outright.
+   - Normalize roles via the Clerk claim map (`roles` top-level or `public_metadata.roles`, `ALLOWED_ROLES`, default `["viewer"]`, missing `sub` (`user_xxx`) → `401`). Rollover MUST NOT alter role semantics.
+   - Emit `WARNING` log on prev-set use (`jwks_previous_key_used`, no key material) so operators can observe rotation drain.
+3. **Rotation runbook (kid-rollover — no operator action):** Clerk rotates signing keys automatically; the backend's JWKS cache (600s) + prev-set fallback already implements zero-downtime overlap. Operator steps: none (verify `jwks_previous_key_used` drains after Clerk publishes the new `kid`). Rollback = prior Cloud Run revision + prior Vercel deployment (both immutable; no DB migration involved).
+4. **Boot guard:** `ENV=production` requires `JWT_ISSUER=https://<clerk-app>` (https + non-localhost) and `JWT_AUDIENCE=kromarag-web` → else `RuntimeError` (`jwt_issuer_invalid` / `jwt_audience_invalid`, fail-closed, never serve). `AUTH_SECRET_*` are dev-only and no longer gated in prod.
+5. **Verify hygiene:** in `ENV=production` any configured HS256 secret that is weak (`<32 chars`) or a documented default/placeholder (`change-me*`, `placeholder*`) is dropped from the verify set (public values are forgeable). Prod identity is Clerk RS256; the filter is retained harmlessly for non-prod dev-bypass semantics.
 
 ### 3.4 Prod Endpoint Deltas (additive, non-breaking)
 
@@ -260,6 +271,7 @@ Request path: `TrustedHost → CORS → RateLimit → Auth → Route`. Response 
 |---|---|---|
 | `GET /health` (kept) + `GET /healthz` (alias) | none, rate-limit exempt | Liveness: `200 {"status":"ok","service":"kromarag-api","version":"0.1.0"}` in `<50ms`, no DB, no provider calls. |
 | `GET /ready` (kept) + `GET /readyz` (alias) | none, rate-limit exempt | Readiness §5.1: `200 {"ready":true,"db":"ok","pool":{...},"models":{"gemini":"ok\|unprobed","groq":"ok\|unprobed"},"version":"0.1.0"}` / `503 {"ready":false,"db":"down",...}`. |
+| `GET /metrics` | `admin` JWT **AND** scraper allowlist (`09` §3.2) | Dual-gated ops plane: network miss → oracle-safe `404` (even for admins); with empty `METRICS_SCRAPE_ALLOWLIST` in prod the gate is closed for all external callers (fail-closed healthy). Deploy-kit smoke derives authed expectations from the anon probe (anon `404` → authed `404`; anon `401` → viewer `403` + admin `200`). |
 | All `/api/v1/*` | per-route (`02`/`06`/`07`) | Adds `429 RATE_LIMITED` + `503 DB_UNAVAILABLE` to the documented error-code set; existing codes unchanged. |
 
 ---
@@ -298,17 +310,26 @@ Background (never blocks stream) ........ LangSmith batch, usage log, history pa
 
 | Case | Behavior |
 |------|----------|
-| Missing/expired JWT, bad `iss/aud`, missing `sub` | `401 UNAUTHENTICATED` (unchanged `02 §5`); consumes `unauth` IP bucket. |
+| Missing/expired Clerk JWT, bad `iss/aud`, missing `sub` (`user_xxx`), kid-less HS256 in prod | `401 UNAUTHENTICATED` (unchanged `02 §5`); consumes `unauth` IP bucket. |
 | `viewer` on `editor+` route | `403 FORBIDDEN` (role gate, before existence checks — the ONLY `403` for routes; `06`/`07` `404`-oracle rules unchanged for `/{id}` existence). |
 | Guessed UUID / foreign doc/thread | `404 NOT_FOUND` uniform body (unchanged). |
 | Rate breach | `429 RATE_LIMITED` + `Retry-After` + `X-RateLimit-*` + `X-Trace-Id`; `WARNING` log. Probes exempt. |
 | Pool exhaust / Neon unreachable | `503 DB_UNAVAILABLE` + `Retry-After: 5`; `readyz` → `503 {"ready":false,"db":"down"}`; `healthz` stays `200`. |
 | Gemini retryable failure | Fallback to Groq (§4.2); `ERROR` log; `done.fallback_used=true`. |
 | Both LLMs down | Friendly SSE `error + done` (§4.2 rule 4); no `500` on transport; `CRITICAL` alert. |
-| `AUTH_SECRET_*` missing/default in prod | Boot `RuntimeError` (fail-closed); Cloud Run revision never becomes traffic-serving. |
+| `JWT_ISSUER` not Clerk-https / localhost in prod, or `JWT_AUDIENCE ≠ kromarag-web` | Boot `RuntimeError` (fail-closed: `jwt_issuer_invalid` / `jwt_audience_invalid`); Cloud Run revision never becomes traffic-serving. Kid-less HS256 in prod → `401` (§3.3). |
 | `CORS_ORIGINS` contains `*` with `ENV=production` | Boot `RuntimeError` (fail-closed). |
 | Migration failure at entrypoint | Boot abort; revision stays unready; prior revision keeps traffic (zero-downtime preserved). |
 | Oversize file / bad mime / validation | `413` / `422` per `07 §4.7` (unchanged), now also rate-counted. |
+| URL ingest `file://`, non-http scheme, private/loopback/IMDS host, redirect to private | `422 URL_FETCH_BLOCKED` per SEC-06 (§4.5); no outbound fetch, `WARNING` log with host only (no full URL content). |
+
+### 4.5 URL Fetch SSRF Guard (SEC-06 normative)
+
+1. **Scheme:** `http`/`https` only. Anything else (`file://`, `ftp://`, `gopher://`, no-scheme) → `ValueError("URL_FETCH_BLOCKED: scheme not allowed")`.
+2. **DNS + IP check per hop:** resolve host via `socket.getaddrinfo`; if ALL resolved IPs are private/loopback/link-local/multicast/reserved/unspecified (`ipaddress` module) → block. Covers `localhost`, `127.0.0.0/8`, `10/8`, `172.16/12`, `192.168/16`, `169.254/16` (IMDS), `::1`, `fc00::/7`, `fe80::/10`.
+3. **Redirects:** max 3 hops, each hop re-validated (DNS-rebinding safe). `httpx` `follow_redirects=False` + manual loop so every `Location` is checked before fetch.
+4. **Timeouts/caps:** `Timeout(connect=3.0, read=15.0, write=5.0, pool=3.0)`, `URL_MAX_BYTES=50000` slice. No credentials forwarded (`Authorization`/`Cookie` stripped on cross-host redirect).
+5. **Error mapping:** blocked → `ValueError(URL_FETCH_BLOCKED)` → endpoint maps to `422`; network/timeout → `ValueError(URL_FETCH_FAILED)` → `422` with safe message (no internal IP disclosure).
 
 ---
 
@@ -372,13 +393,13 @@ Rules: `trace_id` = per-request UUID, echoed as `X-Trace-Id` response header AND
 | `DATABASE_URL` | yes | Secret Manager | `…@localhost…` → pooled Neon `…-pooler.…?sslmode=require` | Asyncpg form `postgresql+asyncpg://`. Never logged. Must contain `-pooler` + `sslmode=require` in prod or boot fails. |
 | `DATABASE_URL_SYNC` | yes (jobs) | Secret Manager | unset → direct Neon `postgresql://` non-pooled | `migrate.py` / `ANALYZE` / `reembed.py` only. |
 | `PGVECTOR_DIM` | yes | env | `768` (pinned) | Mismatch vs `vector_dims` sample → boot `WARNING` + `readyz` degraded. |
-| `AUTH_SECRET_CURRENT` | yes | Secret Manager | `change-me*` → `≥32-char` random (`openssl rand -base64 48`) | Signs JWTs. Default/degraded value → boot fail. |
-| `AUTH_SECRET_PREVIOUS` | rotation-only | Secret Manager | empty → old secret during 24–48h window | Verifies only. Empty outside window is healthy. |
-| `JWT_ISSUER` | yes | env | `http://localhost:3000` → `https://kromarag.vercel.app` | Must be `https://` in prod. |
-| `JWT_AUDIENCE` | yes | env | `kromarag-web` (same prod) | Mismatch → `401` storm; verify in deploy smoke. |
+| `JWT_ISSUER` | yes | env | `http://localhost:3000` (dev bypass) → `https://<app>.clerk.accounts.dev` (Clerk prod/dev app) | Must be `https://` + non-localhost in prod (boot fail otherwise). |
+| `JWT_AUDIENCE` | yes | env | `kromarag-web` (same prod) | Template carries it; mismatch → `401` storm; verify in deploy smoke. |
+| `CLERK_JWKS_URL` | no | env | empty → derive `{JWT_ISSUER}/.well-known/jwks.json` | Optional explicit JWKS pin. |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | yes (web) | Vercel env | `pk_test_…` (dev/preview) → `pk_live_…` (prod) | Per-env Clerk app key; baked at build — one web build per env. |
+| `CLERK_SECRET_KEY` | yes (web server + smoke runner) | Vercel env (server-only) / smoke runner env | `sk_test_…` → `sk_live_…` | Never in Cloud Run env (backend needs no Clerk secret for JWKS). Smoke runner only for `sign_in_tokens` tickets. |
 | `CORS_ORIGINS` | yes | env | `http://localhost:3000` → `https://kromarag.vercel.app` | Exact origins, comma-separated. `*` in prod → boot fail. |
 | `NEXT_PUBLIC_API_URL` | yes (web) | Vercel env | `http://localhost:8000` → `https://<cloud-run-host>` | Build-time baked — one web build per env. |
-| `NEXTAUTH_URL` | yes (web) | Vercel env | `http://localhost:3000` → `https://kromarag.vercel.app` | Must equal `JWT_ISSUER`. |
 | `GOOGLE_API_KEY` / `GEMINI_API_KEY` | yes (either) | Secret Manager | empty → prod fail | At least one must verify against Generative Language API at deploy smoke. |
 | `GEMINI_MODEL` | yes | env | `gemini-3.6-flash` | Pin; change = new deploy + smoke eval. |
 | `GROQ_API_KEY` | yes | Secret Manager | empty → prod fail (fallback is load-bearing) | Deploy smoke MUST force one fallback call. |
@@ -392,13 +413,13 @@ Rules: `trace_id` = per-request UUID, echoed as `X-Trace-Id` response header AND
 | `RATE_LIMIT_UNAUTH_PER_MIN` | no | env | `10` | IP-keyed. |
 | `RATE_LIMIT_ADMIN_PER_MIN` | no | env | `300` | Still capped (no uncapped admin). |
 | `LLM_TIMEOUT_S` / `LLM_FALLBACK_TIMEOUT_S` / `EMBED_TIMEOUT_S` / `RETRIEVER_TIMEOUT_MS` | no | env | `25 / 12 / 8 / 3000` | Raise only with latency-budget review. |
-| `POOL_MIN_SIZE` / `POOL_MAX_SIZE` / `POOL_COMMAND_TIMEOUT_S` | no | env | `2 / 20 / 10` | `MAX` × `max-instances` must fit Neon `max_connections`. |
+| `POOL_MIN_SIZE` / `POOL_MAX_SIZE` / `POOL_COMMAND_TIMEOUT` | no | env | `2 / 20 / 10` | `MAX` × `max-instances` must fit Neon `max_connections`. |
 | `HISTORY_MAX_TURNS/CHARS/TOKENS` | no | env | `10 / 6000 / 1500` (`06 §2.6`) | Unchanged. |
 | `DOC_UPLOAD_MAX_BYTES` / `URL_MAX_BYTES` | no | env | `20971520 / 50000` (`07 §2.6`) | Unchanged. |
 | `API_HOST` / `API_PORT` | no | env | `0.0.0.0 / 8000` | Container listens `8000`; Cloud Run maps `$PORT` → entrypoint MUST honor `$PORT` when set. |
 | `WEB_CONCURRENCY` | no | env | `1` | `1` on Cloud Run; gunicorn hosts only may raise. |
 
-Secret-generation runbook (normative): `openssl rand -base64 48` for `AUTH_SECRET_*`; Neon + provider keys rotated in vendor console then Secret Manager revision; Cloud Run **new revision** (never in-place env patch without revision note); Vercel env change → redeploy web; verify with §7 smoke (health, authed query, forced fallback, rotation-drain check) before marking deploy green.
+Secret-generation runbook (normative): `openssl rand -base64 48` for the local dev-bypass `AUTH_SECRET` only (same value in `apps/web/.env.local` + `apps/api/.env`, never Vercel/Cloud Run); Clerk keys rotate in the Clerk dashboard; Neon + provider keys rotate in vendor console then Secret Manager revision; Cloud Run **new revision** (never in-place env patch without revision note); Vercel env change → redeploy web; verify with §7 smoke (health, authed Clerk query, forced fallback, kid-rollover drain check) before marking deploy green.
 
 ---
 
@@ -464,17 +485,17 @@ Feature: Production Hardening & Deployment
     When connectivity is restored
     Then GET /readyz returns 200 {"ready":true,"db":"ok"} without container restart (pool re-acquires)
 
-  Scenario: Secret rotation without downtime (dual-secret overlap)
-    Given AUTH_SECRET_CURRENT=C1 and AUTH_SECRET_PREVIOUS=C0 with active user JWTs signed by C0
-    When C0-signed "alice" POSTs /api/v1/query
-    Then response is 200 SSE (verified via PREVIOUS) with WARNING log key_generation=previous
-    When Web mints new JWTs with C1 and operator waits past max TTL then clears PREVIOUS
-    Then C1 traffic stays 200, C0 replays correctly become 401, and no forced logout occurred inside the window
+  Scenario: Key rollover without downtime (Clerk kid-rollover)
+    Given JWKS current-set kid K1 and cached prev-set kid K0 with an active K0-signed user JWT
+    When K0-signed "alice" POSTs /api/v1/query
+    Then response is 200 SSE (verified via prev-set) with WARNING log jwks_previous_key_used
+    When Clerk publishes K1-only JWKS and sessions refresh past the 60s template TTL
+    Then K1 traffic stays 200, stale-K0 replays correctly become 401, and no operator action was needed
 
   Scenario: Boot fails closed on insecure prod config
-    Given ENV=production and AUTH_SECRET_CURRENT="change-me-32-chars-min"
+    Given ENV=production and JWT_ISSUER="http://localhost:3000"
     When the container boots
-    Then it exits non-zero before binding traffic with ERROR log auth_secret_invalid
+    Then it exits non-zero before binding traffic with ERROR log jwt_issuer_invalid
     Given ENV=production and CORS_ORIGINS="*"
     When the container boots
     Then it exits non-zero with ERROR log cors_wildcard_rejected
@@ -488,9 +509,9 @@ Feature: Production Hardening & Deployment
 
 ### Exit Gates (Phase mapping, `05` cross-cutting)
 
-- `uv run pytest -q` green — 96 inherited tests + new `tests/test_prod_hardening.py` (rate-limit matrix incl. exempt probes, header presence on `200/429/503`, fallback single-attempt + `fallback_used`, timeout-slice abort, `readyz` 503 vs `healthz` 200 split, dual-secret verify order, boot fail-closed on defaults/`*` CORS).
-- `npm run build --workspace apps/web` green with `headers()` + `output:standalone`; `docker build -f apps/api/Dockerfile apps/api -t kromarag-api:spec08` + `docker build -f apps/web/Dockerfile apps/web` green; `trivy image --severity HIGH,CRITICAL` = 0; images run locally with `ENV=production` + pooled-DSN placeholder and fail-closed guards demonstrably trip on defaults.
-- `npm run spec:check` green (extended to 06/07/08: aliases `/healthz`, codes `RATE_LIMITED`/`DB_UNAVAILABLE`, `AUTH_SECRET_CURRENT`, `pgBouncer`, migration files `001/002/003`).
+- `uv run pytest -q` green — 96 inherited tests + new `tests/test_prod_hardening.py` (rate-limit matrix incl. exempt probes, header presence on `200/429/503`, fallback single-attempt + `fallback_used`, timeout-slice abort, `readyz` 503 vs `healthz` 200 split, Clerk kid-rollover verify order, boot fail-closed on Clerk issuer/`*` CORS).
+- `npm run build --workspace apps/web` green with `headers()` + `output:standalone` (dummy Clerk keys, no live calls); `docker build -f apps/api/Dockerfile apps/api -t kromarag-api:spec08` + `docker build -f apps/web/Dockerfile apps/web` green; `trivy image --severity HIGH,CRITICAL` = 0; images run locally with `ENV=production` + pooled-DSN placeholder and fail-closed guards demonstrably trip on non-Clerk issuer.
+- `npm run spec:check` green (extended to 06/07/08: aliases `/healthz`, codes `RATE_LIMITED`/`DB_UNAVAILABLE`, Clerk `protect()` + `kromarag` template, `pgBouncer`, migration files `001/002/003`).
 - Staging deploy drill green: Vercel preview → staging Cloud Run → Neon branch — login→query (forced fallback once)→upload→reindex→archive→purge→rotation-drain, with LangSmith traces + JSON-log `trace_id` join verified end-to-end; Lighthouse `≥ 85`; p95 latency/fallback/pool dashboards screenshotted into release notes.
 - Manual: `curl -i` header audit; `hey -z 60s -q 5` rate-burst replay; kill-Gemini chaos; kill-Neon chaos; `docker logs` secret-scrub grep (`://.*@` → zero hits).
 
