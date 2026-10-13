@@ -189,7 +189,7 @@ Precedence on truncation: turn-count → char-cap (drop oldest first) → token-
 
 ## 3. System Interface & Contracts
 
-Base `{API_URL}/api/v1`. Auth `Authorization: Bearer <Auth.js JWT>` (`viewer+` all routes below). Errors `02 §4` shape `{"detail":{"code","message"}}` + `X-Trace-Id` header.
+Base `{API_URL}/api/v1`. Auth `Authorization: Bearer <Clerk JWT (template kromarag)>` (`viewer+` all routes below). Errors `02 §4` shape `{"detail":{"code","message"}}` + `X-Trace-Id` header.
 
 | Method & Path | Auth | Request | Response | Notes |
 |---|---|---|---|---|

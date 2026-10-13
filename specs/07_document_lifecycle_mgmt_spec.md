@@ -268,7 +268,7 @@ pgvector_dim: int = 768                 # unchanged; reindex validates equality
 
 ## 3. System Interface & Contracts
 
-Base `{API_URL}/api/v1`. Auth `Authorization: Bearer <Auth.js JWT>` (`get_current_principal` + `require_role` per `02 §5`). Errors `02 §4` shape `{"detail":{"code","message"}}` + `X-Trace-Id` header. **Leak-safe rule (normative):** any operation on a doc the caller cannot see returns `404 {"code":"NOT_FOUND","message":"not found or forbidden"}` — identical body to a random nonexistent UUID — never `403` for existence. (`403 FORBIDDEN` is reserved exclusively for role-gate failures, e.g. `viewer` calling an `editor+` route.)
+Base `{API_URL}/api/v1`. Auth `Authorization: Bearer <Clerk JWT (template kromarag)>` (`get_current_principal` + `require_role` per `02 §5`). Errors `02 §4` shape `{"detail":{"code","message"}}` + `X-Trace-Id` header. **Leak-safe rule (normative):** any operation on a doc the caller cannot see returns `404 {"code":"NOT_FOUND","message":"not found or forbidden"}` — identical body to a random nonexistent UUID — never `403` for existence. (`403 FORBIDDEN` is reserved exclusively for role-gate failures, e.g. `viewer` calling an `editor+` route.)
 
 | Method & Path | Auth | Request | Response | Notes |
 |---|---|---|---|---|

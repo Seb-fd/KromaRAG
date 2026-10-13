@@ -10,14 +10,17 @@
 │ Next.js App  │ ◄─────────── │ FastAPI (async)  │             │ DATABASE_URL only   │
 │ Vercel       │  SSE stream  │ Cloud Run/Render │             │ Neon-compatible     │
 └──────┬───────┘              └────┬───┬────┬────┘             └─────────────────────┘
-       │ Auth.js                   │   │    │
-       │ JWT (JWKS)                │   │    └──► Groq API (fallback: openai/gpt-oss-120b; legacy: llama-3.3-70b)
-       └───────────────────────────┘   └───────► Gemini API (primary: gemini-3.6-flash + gemini-embedding-001; legacy: 2.0-flash + text-embedding-004)
-                                           │
+       │ Clerk                     │   │    │
+       │ session JWT               │   │    └──► Groq API (fallback: openai/gpt-oss-120b; legacy: llama-3.3-70b)
+       │ template kromarag (JWKS)  │   └───────► Gemini API (primary: gemini-3.6-flash + gemini-embedding-001; legacy: 2.0-flash + text-embedding-004)
+       └───────────────────────────┘       │
                                            └──► LangSmith (tracing, Prometheus-style token metrics)
+┌──────────────┐
+│ Clerk        │  kromarag-dev / kromarag-prod apps; Google OAuth + publicMetadata.roles
+└──────────────┘
 ```
 
-- **Frontend:** Next.js App Router, React Server Components for shells, Client Components for chat/SSE. Auth.js v5 session; JWT forwarded as `Authorization: Bearer`.
+- **Frontend:** Next.js App Router, React Server Components for shells, Client Components for chat/SSE. Clerk session (`kromarag-dev` / `kromarag-prod` apps); session JWT (template `kromarag`: email+roles+aud) forwarded as `Authorization: Bearer`.
 - **Backend:** Python 3.12, FastAPI async, Pydantic v2, `asyncpg` pool, `sse-starlette` for streaming. Stateless; scales horizontally on Cloud Run.
 - **DB:** Fully generic Postgres 15+ with `pgvector` extension. Connection **only** via `DATABASE_URL=postgresql+asyncpg://…`. No provider keys. Works on Neon (pooled), Render, self-hosted. See §3.
 - **LLM routing:** Gemini primary (`gemini-3.6-flash`, legacy: `2.0-flash`; embeddings `gemini-embedding-001`, legacy retired: `text-embedding-004`), Groq fallback (`openai/gpt-oss-120b`, legacy: `llama-3.3-70b`) on timeout/5xx/rate-limit. Deterministic router in `services/llm_router.py`.
@@ -25,7 +28,7 @@
 ## 2. Data Flow
 
 ### 2.1 Query (streaming SSE, async pipeline)
-1. `apps/web` → `POST /api/v1/query` with Auth.js JWT. `Accept: text/event-stream`.
+1. `apps/web` → `POST /api/v1/query` with Clerk JWT (template `kromarag`). `Accept: text/event-stream`.
 2. FastAPI `Depends(get_current_principal)` validates JWT (JWKS, iss/aud/exp) → `Principal{sub, email, roles}`.
 3. LangGraph run (see `03`): `router → retriever (RBAC-filtered hybrid search) → reranker → generator → guardrail`.
 4. Tokens streamed as SSE `token` events; `source` events carry chunk citations; terminal `done` carries `trace_id`, token counts.
@@ -43,7 +46,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- Documents (one row per ingested file/URL)
 CREATE TABLE kroma_documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_sub TEXT NOT NULL,               -- Auth.js JWT sub
+  owner_sub TEXT NOT NULL,               -- Clerk JWT sub (user_xxx; legacy demo|email / google-oauth2|… backfilled)
   title TEXT NOT NULL,
   mime TEXT NOT NULL DEFAULT 'text/plain',
   uri TEXT,
@@ -82,7 +85,7 @@ Neon notes: use pooled host for `DATABASE_URL`; `ivfflat` index built after bulk
 - Roles: `admin` > `editor` > `viewer`. Hierarchy enforced in code: `admin ⊇ editor ⊇ viewer`.
 - JWT claim `roles: string[]` is authoritative for route gating (see `02` §5). Document visibility = `owner_sub == sub OR EXISTS(kroma_document_roles WHERE doc_id AND role = ANY(principal.roles)) OR admin`.
 - Enforcement layers: (1) FastAPI dependency `require_role("editor")` → 403; (2) SQL `WHERE` filter in retriever (never post-filter in Python alone); (3) optional Postgres RLS as defense-in-depth (Phase 2).
-- Auth.js is IdP; backend is stateless validator via JWKS (`JWT_ISSUER/.well-known/jwks.json`), cached 10 min. Clock skew ±60s.
+- Clerk is IdP (`kromarag-dev` / `kromarag-prod`); backend is stateless validator via JWKS (`JWT_ISSUER/.well-known/jwks.json`), cached 10 min. Clock skew ±60s. Roles in `publicMetadata.roles` (default `viewer`).
 
 ## 5. Non-functionals
 

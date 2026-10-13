@@ -1,13 +1,19 @@
 "use client";
 
-import { SessionProvider } from "next-auth/react";
+import { ClerkProvider } from "@clerk/nextjs";
 import { AppProvider } from "@/lib/store";
 
-/** Client providers: Auth.js session + KromaRAG store (theme, role, convs, toasts). */
+/** Client providers: Clerk session + KromaRAG store (theme, role, convs, toasts). */
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider refetchOnWindowFocus={false}>
+    <ClerkProvider
+      signInUrl="/login"
+      signUpUrl="/login"
+      signInFallbackRedirectUrl="/"
+      signUpFallbackRedirectUrl="/"
+      afterSignOutUrl="/login"
+    >
       <AppProvider>{children}</AppProvider>
-    </SessionProvider>
+    </ClerkProvider>
   );
 }

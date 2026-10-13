@@ -92,7 +92,7 @@ Open `http://localhost:3000`. Set `NEXT_PUBLIC_API_URL=http://127.0.0.1:8000` (o
 
 | Layer | Tech | Source of truth |
 |---|---|---|
-| Frontend | Next.js 16 App Router, React 19, Tailwind 3, Auth.js v5 — hosted Vercel | `apps/web/package.json`, `apps/web/auth.ts`, `apps/web/next.config.js` |
+| Frontend | Next.js 16 App Router, React 19, Tailwind 3, Clerk (`kromarag-dev` / `kromarag-prod`) — hosted Vercel | `apps/web/package.json`, `apps/web/proxy.ts`, `apps/web/lib/kroma-token.ts`, `apps/web/next.config.js` |
 | Backend | **Python 3.12+**, FastAPI `>=0.115` (async), Pydantic v2, `sse-starlette`, `asyncpg` — hosted Cloud Run | `apps/api/pyproject.toml`, `apps/api/app/main.py` |
 | Agent | LangGraph (`router → retriever → reranker → generator → guardrail → evaluator`), LangChain Core | `apps/api/app/agent/graph.py` |
 | DB | Generic Postgres 15+ + `pgvector` via `DATABASE_URL=postgresql+asyncpg://…` — Neon pooled / Render / self-hosted. `kroma_` prefix, `VECTOR(768)`, `ivfflat` + `GIN` | `apps/api/migrations/001_kroma_schema.sql`, `specs/01-system-architecture.md §3` |
@@ -108,7 +108,7 @@ Open `http://localhost:3000`. Set `NEXT_PUBLIC_API_URL=http://127.0.0.1:8000` (o
 - Python `>=3.12` (`requires-python` in `apps/api/pyproject.toml`) + [`uv`](https://docs.astral.sh/uv/) (recommended) or `pip`.
 - Node `>=22.0.0` (`engines` in root `package.json`).
 - Any Postgres 15+ with `pgvector` (`vector`, `pg_trgm` extensions). No provider-specific keys — only `DATABASE_URL`.
-- Keys: `GOOGLE_API_KEY` / `GEMINI_API_KEY` (AI Studio, Generative Language API enabled), `GROQ_API_KEY`, `LANGSMITH_API_KEY` (optional but required for prod tracing), `AUTH_SECRET` (≥32 chars, shared web ↔ API; prod uses `AUTH_SECRET_CURRENT` + `AUTH_SECRET_PREVIOUS` rotation).
+- Keys: `GOOGLE_API_KEY` / `GEMINI_API_KEY` (AI Studio, Generative Language API enabled), `GROQ_API_KEY`, `LANGSMITH_API_KEY` (optional but required for prod tracing), Clerk `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + server-only `CLERK_SECRET_KEY` (per app: `kromarag-dev` / `kromarag-prod`), plus dev-only `AUTH_SECRET` (same value in `apps/web/.env.local` + `apps/api/.env` for the non-prod HS256 bypass; never Vercel/Cloud Run).
 - k6 binary only for load runs (`loadtests/k6/`).
 
 > Legacy note (verified in code): `text-embedding-004` was retired (404 `NOT_FOUND` on `v1beta` as of 2026 — see `app/services/embeddings.py`). The live default is `gemini-embedding-001`. Legacy values `text-embedding-004` / `gemini-2.0-flash` / `llama-3.3-70b(-versatile)` appear in specs `01/03/04` history and `app/core/costs.py` for cost continuity; code + `.env.example` are authoritative: `gemini-3.6-flash` + `gemini-embedding-001` + `openai/gpt-oss-120b`.
@@ -123,11 +123,11 @@ Verified against `specs/01-system-architecture.md §1–§2`, `app/main.py`, `ap
 flowchart LR
     subgraph WEB["apps/web — Next.js (Vercel)"]
         UI["Chat UI / Upload<br/>SSE reader"]
-        AUTH["Auth.js v5<br/>JWT iss/aud/exp<br/>roles[]"]
+        AUTH["Clerk session<br/>template kromarag<br/>email+roles+aud"]
     end
 
     subgraph API["apps/api — FastAPI async (Cloud Run)"]
-        SEC["get_current_principal<br/>require_role<br/>JWKS + HS256"]
+        SEC["get_current_principal<br/>require_role<br/>Clerk JWKS RS256"]
         RL["RateLimit + SecurityHeaders<br/>CORS exact allowlist"]
         LG["LangGraph<br/>router → retriever → reranker<br/>→ generator → guardrail → evaluator"]
         RET["hybrid_search tool<br/>0.7 cosine + 0.3 ts_rank"]
@@ -150,9 +150,9 @@ flowchart LR
         LS["LangSmith<br/>project KromaRAG"]
     end
 
-    UI -- "POST /api/v1/query<br/>Bearer JWT<br/>Accept: text/event-stream" --> SEC
+    UI -- "POST /api/v1/query<br/>Bearer Clerk JWT<br/>Accept: text/event-stream" --> SEC
     UI -- "POST /api/v1/ingest editor+<br/>POST /documents/upload<br/>GET /documents, /conversations" --> SEC
-    AUTH -- "JWKS /.well-known/jwks.json<br/>HS256 AUTH_SECRET" --> SEC
+    AUTH -- "JWKS /.well-known/jwks.json<br/>RS256 kid (+prev-set)" --> SEC
     SEC --> RL
     RL --> LG
     LG --> RET
@@ -222,22 +222,26 @@ Source: `specs/01 §4`, `specs/02 §5`, `app/core/security.py`, `app/services/re
 
 Roles: `admin > editor > viewer` (`admin ⊇ editor ⊇ viewer`). Hierarchy map in code: `{viewer: 1, editor: 2, admin: 3}`.
 
-JWT (Auth.js v5 → FastAPI) — backend **MUST** validate (`get_current_principal` + `require_role`):
+JWT (Clerk `kromarag` template → FastAPI) — backend **MUST** validate (`get_current_principal` + `require_role`):
 
 ```jsonc
 {
-  "sub": "google-oauth2|108241234567890", // → kroma owner_sub / user_sub (required, else 401)
-  "email": "admin@kromarag.com",
+  "sub": "user_2abcXYZ123",               // → kroma owner_sub / user_sub (required, else 401)
+  "email": "admin@kromarag.com",          // top-level from the template
   "roles": ["viewer"],                    // ★ authoritative, ⊆ ["admin","editor","viewer"]
-  "iss": "http://localhost:3000",         // == JWT_ISSUER (prod: https://kromarag.vercel.app)
-  "aud": "kromarag-web",                  // == JWT_AUDIENCE
+  "iss": "https://kromarag-prod.clerk.accounts.dev", // == JWT_ISSUER (dev app issuer for staging)
+  "aud": "kromarag-web",                  // == JWT_AUDIENCE (template carries it)
   "exp": 1726400000,                      // skew ±60s
   "iat": 1726396400,
   "jti": "uuid"
 }
 ```
 
-1. Parse `Bearer`; fetch JWKS from `{JWT_ISSUER}/.well-known/jwks.json` (cached 600s), try RS256, then fallback HS256 with `AUTH_SECRET` (Auth.js `jwt.encode` path). Prod signs with `AUTH_SECRET_CURRENT`, verifies `CURRENT → PREVIOUS` (24–48h rotation window).
+Roles live in Clerk `publicMetadata.roles` (Dashboard → Users → Metadata; default `["viewer"]`).
+One-time cutover note: old `demo|email` / `google-oauth2|…` subs orphan — backfill
+`owner_sub`/`user_sub` by email from the Clerk user export (see `scripts/deploy/README.md`).
+
+1. Parse `Bearer`; fetch JWKS from `{JWT_ISSUER}/.well-known/jwks.json` (cached 600s + prev-set fallback), verify RS256 `kid`. HS256 dev-bypass only when NOT prod (prod rejects kid-less tokens outright).
 2. Verify signature, then `iss`, `aud`, `exp` (leeway 60s).
 3. Normalize roles: keep only `admin|editor|viewer`; default `["viewer"]` if empty and `sub` present; missing `sub` → `401 {code: UNAUTHENTICATED}`.
 4. Route gating: `require_role("editor")` for ingest/upload/reindex-archive family, `require_role("viewer")` for query/documents/conversations, `admin` or owner+editor for delete paths. Denial → `403 {code: FORBIDDEN, message: "requires role editor"}`. `403` is reserved for role gates; existence probes return `404`.
@@ -303,7 +307,7 @@ Offline deterministic heuristic (CI-gating; production may swap in an LLM judge)
 
 ## 7. API Contracts
 
-Source: `specs/02-api-contracts.md` + `specs/06 §3` + `specs/07 §3` + `specs/08 §3.4` + `specs/09 §3.2`, `app/main.py`, `app/api/v1/*`. Base: `{API_URL}/api/v1` (ops plane `/health*`, `/ready*`, `/metrics` at root). Auth: `Authorization: Bearer <Auth.js JWT>` except `/health*`, `/ready*`.
+Source: `specs/02-api-contracts.md` + `specs/06 §3` + `specs/07 §3` + `specs/08 §3.4` + `specs/09 §3.2`, `app/main.py`, `app/api/v1/*`. Base: `{API_URL}/api/v1` (ops plane `/health*`, `/ready*`, `/metrics` at root). Auth: `Authorization: Bearer <Clerk JWT (template kromarag)>` except `/health*`, `/ready*`.
 
 | Method & Path | Auth | Request | Response | Notes |
 |---|---|---|---|---|
@@ -383,7 +387,7 @@ Source: `specs/08_production_hardening_and_deployment_spec.md`, `app/main.py`, `
 - API posture: `TrustedHost → CORS (exact allowlist, `max_age=600`, no `*` in prod) → RateLimit → Auth` request order; every response carries security headers (`HSTS`, restrictive `CSP frame-ancestors 'none'`, `nosniff`, `DENY`, `Referrer-Policy`, `COOP/CORP`, `Permissions-Policy`), `X-Trace-Id`, `X-RateLimit-*`. Web `next.config.js` mirrors headers + `output:standalone` + same-origin `rewrites()` for dev.
 - DB: prod runtime **only** via pooled DSN (`-pooler` + `sslmode=require`, fail-closed boot guard); one-shot jobs use direct `DATABASE_URL_SYNC`. Pool `min=2/max=20/command_timeout=10s/statement_cache_size=0` (pgBouncer txn mode) + `pool_recycle=300s`. Pool exhaust → `503 DB_UNAVAILABLE + Retry-After: 5`; `readyz` flips `503`, `healthz` stays `200`.
 - LLM budgets: `25s` total = `embed ≤8s + SQL ≤3s + primary ≤15s`, fallback `≤12s` inside stream. Exactly one Groq attempt on retryable `LLMError` (`timeout/429/404-shape/5xx`); `fallback_used=true` + mid-stream informational `error` event + `ERROR` log. Both down → friendly SSE triple (transport `200`).
-- Secrets: prod via Cloud Run Secret Manager / Vercel env only, never in logs/images. Dual-secret rotation: sign `AUTH_SECRET_CURRENT`, verify `CURRENT→PREVIOUS` (+ JWKS `kid` + prev-set fallback), 24–48h window. `ENV=production` fail-closed on defaults, `*` CORS, non-`https` issuer, non-pooled DSN.
+- Secrets: prod via Cloud Run Secret Manager / Vercel env only, never in logs/images. Clerk identity: `kromarag-dev` / `kromarag-prod` apps (template `kromarag`), backend verifies JWKS `kid` + prev-set fallback (no operator rotation). `ENV=production` fail-closed on non-Clerk issuer, `*` CORS, non-pooled DSN.
 - Migrations at entrypoint: `001→002→003` idempotent, advisory-locked, per-file transactions, additive-only; post-verify orphan `= 0` + dim `768`.
 
 ---
@@ -428,12 +432,14 @@ Set-Location KromaRAG
 
 # 2. Root env (generic DB URL — no provider keys)
 Copy-Item .env.example .env
-# Edit .env: DATABASE_URL, GOOGLE_API_KEY, GROQ_API_KEY, LANGSMITH_API_KEY, AUTH_SECRET
+# Edit .env: DATABASE_URL, GOOGLE_API_KEY, GROQ_API_KEY, LANGSMITH_API_KEY,
+# NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY (Clerk dashboard, per app)
 #   DATABASE_URL=postgresql+asyncpg://user:password@host:5432/kromarag
 #   PGVECTOR_DIM=768
 #   GEMINI_MODEL=gemini-3.6-flash / EMBEDDING_MODEL=gemini-embedding-001
 #   GROQ_MODEL=openai/gpt-oss-120b / LLM_PRIMARY=gemini / LLM_FALLBACK=groq
-#   JWT_ISSUER=http://localhost:3000 / JWT_AUDIENCE=kromarag-web
+#   JWT_ISSUER=http://localhost:3000 (dev bypass) / https://<app>.clerk.accounts.dev (prod)
+#   JWT_AUDIENCE=kromarag-web
 #   CORS_ORIGINS=http://localhost:3000 / NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 #   OTEL_ENABLED=true / METRICS_ENABLED=true (see specs/09 §2.5)
 #   CHAOS_*=off (staging-only; prod boot fails if set)
@@ -441,8 +447,9 @@ Copy-Item .env.example .env
 # 3. API env (see apps/api/.env.example) + Web env (see apps/web/.env.local.example)
 Copy-Item apps/api/.env.example apps/api/.env
 Copy-Item apps/web/.env.local.example apps/web/.env.local
-# Set AUTH_SECRET (same ≥32-char value in BOTH files — HS256 JWTs) + NEXT_PUBLIC_API_URL
-# Prod: AUTH_SECRET_CURRENT (sign) + AUTH_SECRET_PREVIOUS (verify overlap) + JWT_ISSUER=https://kromarag.vercel.app
+# Set Clerk keys (per app: kromarag-dev locally) + NEXT_PUBLIC_API_URL.
+# Dev-only: AUTH_SECRET (same value in BOTH files for the non-prod HS256 bypass).
+# Prod: JWT_ISSUER=https://<prod-app>.clerk.accounts.dev (no AUTH_SECRET in prod).
 ```
 
 `scripts/check-specs.js` enforces the SDD gate for specs `01`–`09`:
@@ -518,13 +525,20 @@ Flow: preflight (`COUNT`, `vector_dims(embedding) != 768`, NULL embeddings, inde
 # From repo root
 npm install
 Copy-Item apps/web/.env.local.example apps/web/.env.local
-# Set AUTH_SECRET (shared with FastAPI) + NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+# Set Clerk dev keys (kromarag-dev) + NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 # Dev: NEXT_PUBLIC_USE_PROXY=1 (same-origin proxy); Prod (Vercel): 0/unset + API_URL=https://<cloud-run-host>
 npm run dev --workspace apps/web
-# http://localhost:3000 → /login → Continue as viewer/editor/admin (demo IdP)
+# http://localhost:3000 → /login → Clerk sign-in (Google SSO), or the dev-only
+# email+role bypass form (non-prod builds only; stamps the local HS256 bypass)
 ```
 
-Sign-in mints a short-lived JWT (`sub,email,roles[]`, `aud=kromarag-web`) sent as `Authorization: Bearer` on every API call. Switching roles in the sidebar re-issues the JWT — FastAPI enforces it (upload/reindex/archive: editor+ or owner rules; delete/purge: admin/owner; `/metrics`: admin only). Dark/light toggle in the sidebar. Production build check: `npm run build --workspace apps/web` (verifies `headers()` + `output:standalone`).
+Sign-in resolves a short-lived Clerk JWT (template `kromarag`: `sub=user_xxx`,
+`email`, `roles[]`, `aud=kromarag-web`, 60s TTL) per request, sent as
+`Authorization: Bearer` on every API call. Roles are managed in the Clerk
+dashboard (`publicMetadata.roles`) — the sidebar shows them read-only.
+FastAPI enforces them (upload/reindex/archive: editor+ or owner rules;
+delete/purge: admin/owner; `/metrics`: admin only). Dark/light toggle in the
+sidebar. Production build check: `npm run build --workspace apps/web` (verifies `headers()` + `output:standalone`).
 
 ### 12.8 Docker / Prod Parity
 
@@ -559,16 +573,15 @@ See `loadtests/k6/README.md` + `fixtures/README.md` for corpus, thresholds (rele
 
 ```
 apps/web/              # Next.js 16 frontend (App Router, RSC shells + client chat/SSE)
-  app/                 # routes (/login, chat, upload, api/auth/[...nextauth])
-  auth.ts              # Auth.js JWT callback (roles from kroma_user_roles) + HS256/RS256 encode
-  next.config.js       # headers() security set + output:standalone + rewrites() proxy
-  proxy.ts             # edge proxy (auth/rate-limit friendly)
+  app/                 # routes (/login, chat, upload, api/dev-token [dev-only])
+  proxy.ts             # Clerk edge gate (protect() pages; /api/* public at edge, FastAPI enforces)
+  next.config.js       # headers() security set (incl. Clerk CSP) + output:standalone + rewrites() proxy
+  lib/kroma-token.ts   # single token source (Clerk template kromarag per request + dev bypass)
   lib/api-client.ts    # fetch + ReadableStream SSE reader (source|token|done) + conversations/documents/metrics fns
   lib/citations.ts     # frontend citation mirror (sanitize_title round-trip)
   lib/store.tsx        # thread store (server-authoritative, localStorage read-through)
   lib/roles.ts         # role helpers (canUpload/isAdmin)
   components/ (Chat, Documents, Sidebar, AppShell, Message, Inspector, Toasts, Providers)
-  middleware.ts
 apps/api/              # FastAPI backend (Python 3.12+, async)
   app/main.py          # lifespan (asyncpg pool warmup), CORS, SecurityHeaders, RateLimit + /health* /ready* /metrics + /api/v1 routers
   app/api/v1/          # health (aliases) | metrics (dual-gated) | conversations | documents (lifecycle) | ingest | query (SSE via sse-starlette)
@@ -638,7 +651,7 @@ Requires Node >= 22. Skills land in `.claude/skills/` etc. (gitignored) + genera
 | `missing GOOGLE_API_KEY/GEMINI_API_KEY` / invalid-key on embed | Use an AI Studio key (typically `AIza…`) with Generative Language API enabled. Vertex/OAuth tokens need `genai.Client(vertexai=True, …)` instead of `api_key` auth. |
 | `vector_dims(embedding) != 768` rows in preflight | Mixed-dimension corpus. Run full `reembed.py` (no `--limit`), then verify postflight = 0 mismatches. |
 | Gemini 404 / quota → answers stop | Expected path: `generate_with_fallback` retries on 404/429/5xx/timeout and fails over to Groq (`fallback_used=true`, `event: error {code: LLM_TIMEOUT}`). Check `GROQ_API_KEY` + `X-Trace-Id`/`traceparent` logs + `llm_fallback_total`. |
-| `401 UNAUTHENTICATED` / `403 FORBIDDEN` | Check `AUTH_SECRET` (or `AUTH_SECRET_CURRENT/PREVIOUS` in prod) matches web ↔ API, `JWT_ISSUER`/`JWT_AUDIENCE` (`https://` in prod), clock skew (±60s), and `roles[]` on the JWT (viewer can't `POST /ingest`/`/upload`; delete needs admin/owner; `/metrics` needs admin). |
+| `401 UNAUTHENTICATED` / `403 FORBIDDEN` | Check the Clerk session JWT (template `kromarag`: fresh per request, 60s TTL — stale copies 401), `JWT_ISSUER=https://<app>.clerk.accounts.dev` / `JWT_AUDIENCE=kromarag-web`, clock skew (±60s), and `roles[]` from `publicMetadata.roles` (viewer can't `POST /ingest`/`/upload`; delete needs admin/owner; `/metrics` needs admin). Dev bypass: same `AUTH_SECRET` in `apps/web/.env.local` + `apps/api/.env`, non-prod only. |
 | `404` on own doc/thread | Leak-safe uniform `404` also covers foreign/unshared ids. Verify `owner_sub` vs JWT `sub`, `allowed_roles` shares, and (docs) `status` filter default hides `archived` (use `?status=all`/`archived`). |
 | `429 RATE_LIMITED` + `Retry-After` | Tiered buckets: `query 100/min` (`300` admin), `ingest/upload/reindex 20/min`, `unauth 10/min/IP`. Back off per `Retry-After`; probes + `/metrics` exempt. Check `http_rate_limited_total{bucket}`. |
 | `503 DB_UNAVAILABLE` + `Retry-After: 5` | Pool exhaust / Neon unreachable / SQL >3s (`RETRIEVER_TIMEOUT_MS`). Check `readyz` (should be `503` while down), `db_pool_*` series, pooled DSN (`-pooler` + `sslmode=require`). |
@@ -647,7 +660,7 @@ Requires Node >= 22. Skills land in `.claude/skills/` etc. (gitignored) + genera
 | `422 VALIDATION` / `EMBEDDING_MISMATCH` | Bad `chunk_tokens/overlap` (`100–2000`, `overlap<tokens`), bad `allowed_roles`, blank title, or `embedding_model` ≠ pinned `gemini-embedding-001`. |
 | Slow retrieval / `ivfflat` warnings | Ensure index built after bulk load + `ANALYZE kroma_chunks`; `reembed.py` does `REINDEX` + `ANALYZE` automatically. Use Neon pooled host; check `ready` warmup; watch `vector_search_duration_seconds` p95. |
 | `readyz 503` but `healthz 200` | By design: pool down pulls instance from traffic. Restore DSN/connectivity; no restart needed (pool re-acquires). |
-| Boot `RuntimeError` in prod (`auth_secret_invalid`, `cors_wildcard_rejected`, `chaos_enabled_in_production`, `database_url_invalid`) | Fail-closed guards (`08 §6`, `09 §2.5`): set real `AUTH_SECRET_CURRENT` (≥32 chars), exact `CORS_ORIGINS` (no `*`), `JWT_ISSUER=https://…`, pooled DSN, `CHAOS_*` off. |
+| Boot `RuntimeError` in prod (`jwt_issuer_invalid`, `jwt_audience_invalid`, `cors_wildcard_rejected`, `chaos_enabled_in_production`, `database_url_invalid`) | Fail-closed guards (`08 §6`, `09 §2.5`): set Clerk `JWT_ISSUER=https://<app>.clerk.accounts.dev` (https + non-localhost) + `JWT_AUDIENCE=kromarag-web`, exact `CORS_ORIGINS` (no `*`), pooled DSN, `CHAOS_*` off. |
 | `/metrics` returns `404` for admin | Network gate first: need trusted ingress (`X-Cloud-Run-Internal` / `METRICS_SCRAPE_ALLOWLIST`); non-prod empty allowlist allows all, prod fail-closed denies. External callers always get oracle-safe `404`. |
 | SSE disconnect mid-stream / duplicate writes | Client replays via `GET .../messages` (dedup by `trace_id` unique index). Either zero new rows or exactly one pair; re-delivered `done` never double-writes. |
 
