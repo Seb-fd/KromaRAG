@@ -2,8 +2,8 @@
 # Triggers on push/PR to main. All jobs are required in branch protection.
 # Design notes (see README §15):
 # - Python 3.12 to match apps/api/Dockerfile (python:3.12-slim), not latest.
-# - uv sync UNFROZEN until uv.lock lands (see .gitignore note): run `uv lock`
-#   on Python 3.12 + commit, then switch CI to `uv sync --frozen --extra dev`.
+# - uv sync FROZEN against committed apps/api/uv.lock: reproducible builds.
+#   Refresh with `uv lock --project apps/api` (any host Python >=3.12).
 # - Web build needs dummy Clerk keys: ClerkProvider validates key format at
 #   build time (NODE_ENV=production during `next build`); no live calls occur.
 # - Docker context must be apps/api (Dockerfile copies app/, migrations/, scripts/).
@@ -52,7 +52,7 @@ jobs:
         with:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v7
-      - run: uv sync --extra dev
+      - run: uv sync --frozen --extra dev
       - run: uv run pytest -q
 
   api-lint:
@@ -67,7 +67,7 @@ jobs:
         with:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v7
-      - run: uv sync --extra dev
+      - run: uv sync --frozen --extra dev
       - run: uv run ruff check app tests
 
   api-typecheck:
@@ -82,7 +82,7 @@ jobs:
         with:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v7
-      - run: uv sync --extra dev
+      - run: uv sync --frozen --extra dev
       - run: uv run mypy app
 
   api-audit:
@@ -97,7 +97,7 @@ jobs:
         with:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v7
-      - run: uv sync --extra dev
+      - run: uv sync --frozen --extra dev
       - run: uv run pip-audit
 
   web-lint:
