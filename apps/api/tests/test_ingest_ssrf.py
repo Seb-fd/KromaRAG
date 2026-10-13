@@ -6,6 +6,10 @@ import pytest
 
 from app.services import ingest as ing
 
+# All tests here are async (repo convention is explicit markers; asyncio_mode=auto
+# only applies when pytest finds apps/api/pyproject.toml as rootdir config).
+pytestmark = pytest.mark.asyncio
+
 
 class FakeResp:
     def __init__(self, status=200, content=b"hello", headers=None, encoding="utf-8"):
