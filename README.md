@@ -19,6 +19,23 @@ Production-grade, enterprise-ready **RAG-enabled Agentic Assistant with RBAC**.
 
 ---
 
+## Portfolio / Demo (30-second pitch)
+
+Chat over your private documents with **grounded answers, citations, and role-based access**. Upload docs → ask questions → get streamed answers with `[doc:Title:ord]` badges that open the exact source chunk. Three roles (`admin > editor > viewer`) enforced in SQL, not just UI.
+
+**Why it's production-shaped:** spec-driven (`specs/` is source of truth, CI-gated), hybrid vector + full-text retrieval, deterministic Gemini → Groq fallback, SSE streaming with trace IDs, LangSmith tracing + Prometheus metrics, 161 backend + 10 frontend tests, 12 required CI jobs (pytest/ruff/mypy/pip-audit/eslint/tsc/vitest/build/audit/docker/gitleaks), reproducible `uv.lock` builds, Docker + Cloud Run/Vercel topology.
+
+| | |
+|---|---|
+| **Live demo** | TODO — staging deploy pending (`scripts/deploy/smoke.*` + k6 soak first) |
+| **Demo login** | Clerk: try `viewer` (read-only) vs `editor` (upload + ask) vs `admin` (`/metrics`) |
+| **Try locally** | Backend `http://localhost:8000/docs`, web `http://localhost:3000` — see [Quickstart](#quickstart--local-development) |
+| **Screenshots** | TODO — add `docs/demo-chat.png`, `docs/demo-documents.png` after staging |
+
+Recruiters: start at [2. Architecture](#2-architecture), then [10. Production Hardening](#10-production-hardening--deployment-spec08) for the deploy story.
+
+---
+
 ## Table of Contents
 
 - [Quickstart / Local Development](#quickstart--local-development)
