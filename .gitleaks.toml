@@ -5,26 +5,15 @@ title = "KromaRAG gitleaks config"
 [extend]
 useDefault = true
 
-# Docs prose in README §12.2 describes the spec-gate checks
-# (env names + contract tokens on one line) and trips the
-# generic-api-key rule. Scoped to that single docs line so real
-# key leaks anywhere else still fail CI.
-[[allowlist]]
-description = "README spec-gate prose false-positives generic-api-key"
-paths = ['''README\.md$''']
-regexTarget = "line"
-regexes = ['''check-specs\.js.*enforces''']
-
-# CI/pre-push need Clerk key-SHAPED values for `next build` format validation
-# (zero live calls; real keys live in Vercel env only). These exact values are
-# base64 for "foo-bar..." — documented fakes, never real secrets. Scoped to the
-# exact placeholder strings in the two files that need them, so real key leaks
-# anywhere else still fail CI.
-[[allowlist]]
-description = "documented fake Clerk placeholders (foo-bar base64, no live value)"
-paths = ['''\.github/workflows/ci\.yml$''', '''hooks/pre-push$''']
+# NOTE: gitleaks 8.24 expects ONE [allowlist] map (not [[allowlist]] array),
+# so all scoped false-positives live here. Each regex is an exact documented
+# fake, scoped by path + full-line match — real key leaks anywhere else fail.
+[allowlist]
+description = "scoped doc/CI false-positives: README spec-gate prose + documented foo-bar Clerk placeholders"
+paths = ['''README\.md$''', '''\.github/workflows/ci\.yml$''', '''hooks/pre-push$''']
 regexTarget = "line"
 regexes = [
+  '''check-specs\.js.*enforces''',
   '''pk_test_Zm9vLWJhci5jbGVyay5hY2NvdW50cy5kZXYk''',
   '''sk_test_Zm9vYmFyYmF6cXV4Nzg5MDEyMzQ1Njc4OTA=''',
 ]
