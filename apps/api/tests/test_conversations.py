@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -35,7 +35,7 @@ class FakeConn:
     def _now(self):
         self._seq += 1
         # Distinct, monotonic timestamps (ms resolution + seq micros).
-        base = datetime.now(timezone.utc)
+        base = datetime.now(UTC)
         return base.replace(microsecond=(base.microsecond + self._seq) % 1000000)
 
     # -- transaction (no-op, asyncpg-compatible) --
@@ -217,8 +217,8 @@ def fake_db():
 @pytest.fixture
 def authed_crud(monkeypatch, fake_db):
     """Conversations endpoints see FakePool; query LLM fakes answer with citation."""
-    import app.services.db as db_mod
     import app.api.v1.conversations as conv_mod  # noqa: F401 (ensures router import)
+    import app.services.db as db_mod
 
     pool = FakePool(fake_db)
     monkeypatch.setattr(db_mod, "get_pool", lambda: pool)
@@ -453,7 +453,7 @@ def test_auto_title_rules():
 @pytest.mark.asyncio
 async def test_idempotent_redelivery_no_duplicate(fake_db):
     cid = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     fake_db.convs[cid] = {"id": cid, "user_sub": "alice", "title": "t",
                           "created_at": now, "updated_at": now}
     await conv_svc.persist_pair(fake_db, cid, "alice", "q?", "a.", "TRACE-1",

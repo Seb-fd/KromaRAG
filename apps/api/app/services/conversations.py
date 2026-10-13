@@ -41,7 +41,7 @@ def estimate_history_tokens(text: str) -> int:
     if not t:
         return 0
     try:
-        import tiktoken  # type: ignore
+        import tiktoken
 
         enc = tiktoken.get_encoding("cl100k_base")
         return len(enc.encode(t))

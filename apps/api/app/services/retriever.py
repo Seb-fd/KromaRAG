@@ -87,7 +87,7 @@ async def hybrid_search(query: str, principal, top_k: int = 6, db=None, embed_fn
     # Trace join (spec 09 §3.1 rule 8): application_name + SQL comment. Best-effort.
     if trace_id:
         try:
-            from app.core.tracecontext import db_application_name, db_trace_comment
+            from app.core.tracecontext import db_trace_comment
 
             sql = sql + f" {db_trace_comment(trace_id)}"
         except Exception:

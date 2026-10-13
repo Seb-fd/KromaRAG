@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 import re
 import time
-from dataclasses import dataclass, field
-from typing import Any, TypedDict
+from dataclasses import dataclass
+from typing import Any, TypedDict, cast
 
 from app.agent import evaluator as evaluator_mod
 from app.agent import guardrails as guardrails_mod
@@ -50,6 +50,7 @@ class AgentState(TypedDict, total=False):
     tool_steps: int
     history: list  # [{role: user|assistant, content: str}] verbatim oldest→newest (specs/06 §2.5)
     history_tokens: int
+    _sse_token_frames: int  # internal SSE metric only, never persisted
 
 
 @dataclass
@@ -131,7 +132,7 @@ async def node_retriever(state: AgentState, deps: AgentDeps) -> AgentState:
     for c in list(chunks)[:2]:
         if steps >= deps.max_tool_steps:
             break
-        doc_id = str(c.doc_id if hasattr(c, "doc_id") else c.get("doc_id"))
+        doc_id = str(c["doc_id"] if isinstance(c, dict) else getattr(c, "doc_id", ""))
         if doc_id in seen:
             continue
         seen.add(doc_id)
@@ -145,15 +146,15 @@ async def node_retriever(state: AgentState, deps: AgentDeps) -> AgentState:
 
 async def node_reranker(state: AgentState, deps: AgentDeps) -> AgentState:
     """Blended-score order (retriever already reranks) + citation attachment."""
-    chunks = sorted(list(state.get("chunks", [])), key=lambda c: float(
-        c.score if hasattr(c, "score") else c.get("score", 0)), reverse=True)
+    chunks = sorted(state.get("chunks", []), key=lambda c: float(
+        c["score"] if isinstance(c, dict) else getattr(c, "score", 0)), reverse=True)
     state["chunks"] = chunks
     state["citations"] = [
-        {"chunk_id": str(c.chunk_id if hasattr(c, "chunk_id") else c.get("chunk_id")),
-         "doc_id": str(c.doc_id if hasattr(c, "doc_id") else c.get("doc_id")),
-         "title": c.title if hasattr(c, "title") else c.get("title", ""),
-         "ord": int(c.ord if hasattr(c, "ord") else c.get("ord", 0)),
-         "score": round(float(c.score if hasattr(c, "score") else c.get("score", 0)), 4)}
+        {"chunk_id": str(c["chunk_id"] if isinstance(c, dict) else getattr(c, "chunk_id", "")),
+         "doc_id": str(c["doc_id"] if isinstance(c, dict) else getattr(c, "doc_id", "")),
+         "title": c["title"] if isinstance(c, dict) else getattr(c, "title", ""),
+         "ord": int(c["ord"] if isinstance(c, dict) else getattr(c, "ord", 0)),
+         "score": round(float(c["score"] if isinstance(c, dict) else getattr(c, "score", 0)), 4)}
         for c in chunks
     ]
     return state
@@ -214,8 +215,9 @@ async def node_generator(state: AgentState, deps: AgentDeps) -> AgentState:
         # from the joined trace_id for provider calls (best-effort, no I/O).
         traceparent = None
         try:
-            from app.core.tracecontext import build_traceparent
             import secrets as _secrets
+
+            from app.core.tracecontext import build_traceparent
 
             tid = state.get("trace_id") or ""
             if tid:
@@ -254,7 +256,9 @@ async def node_guardrail(state: AgentState, deps: AgentDeps) -> AgentState:
             return state
         draft = state.get("draft", "")
         if state.get("route") == "direct":
-            safe, flags = guardrails_mod.redact_pii(draft), []
+            safe: str
+            flags: list[str] = []
+            safe = guardrails_mod.redact_pii(draft)
             state["answer"] = safe
             state["flags"] = [*state.get("flags", []), *flags]
             return state
@@ -266,7 +270,7 @@ async def node_guardrail(state: AgentState, deps: AgentDeps) -> AgentState:
 
 async def node_evaluator(state: AgentState, deps: AgentDeps) -> AgentState:
     chunks = state.get("chunks", [])
-    allowed = {str(c.doc_id if hasattr(c, "doc_id") else c.get("doc_id")) for c in chunks} or None
+    allowed = {str(c["doc_id"] if isinstance(c, dict) else getattr(c, "doc_id", "")) for c in chunks} or None
     state["eval"] = evaluator_mod.evaluate(
         state.get("answer", ""), chunks, state.get("query", ""),
         allowed_doc_ids=allowed, forbidden_claims=deps.forbidden_claims,
@@ -313,7 +317,7 @@ class FallbackGraph:
         self.deps = deps or AgentDeps()
 
     async def ainvoke(self, state: AgentState) -> AgentState:
-        return await arun(dict(state), self.deps)
+        return await arun(cast(AgentState, dict(state)), self.deps)
 
 
 def build_graph(deps: AgentDeps | None = None):

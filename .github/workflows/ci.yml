@@ -2,9 +2,10 @@
 # Triggers on push/PR to main. All jobs are required in branch protection.
 # Design notes (see README §15):
 # - Python 3.12 to match apps/api/Dockerfile (python:3.12-slim), not latest.
-# - uv sync UNFROZEN: uv.lock is gitignored, so --frozen would fail in CI.
-# - Web build needs a dummy AUTH_SECRET: apps/web/auth.ts throws in
-#   production (NODE_ENV=production during `next build`) when it is missing.
+# - uv sync UNFROZEN until uv.lock lands (see .gitignore note): run `uv lock`
+#   on Python 3.12 + commit, then switch CI to `uv sync --frozen --extra dev`.
+# - Web build needs dummy Clerk keys: ClerkProvider validates key format at
+#   build time (NODE_ENV=production during `next build`); no live calls occur.
 # - Docker context must be apps/api (Dockerfile copies app/, migrations/, scripts/).
 # - Trivy/k6 are intentionally NOT required here (nightly/staging); gitleaks
 #   scans the PR diff to avoid flagging ancient history on day one.
@@ -54,6 +55,51 @@ jobs:
       - run: uv sync --extra dev
       - run: uv run pytest -q
 
+  api-lint:
+    name: api ruff
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --extra dev
+      - run: uv run ruff check app tests
+
+  api-typecheck:
+    name: api mypy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --extra dev
+      - run: uv run mypy app
+
+  api-audit:
+    name: api pip-audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --extra dev
+      - run: uv run pip-audit
+
   web-lint:
     name: web lint
     runs-on: ubuntu-latest
@@ -66,12 +112,39 @@ jobs:
       - run: npm ci
       - run: npx --workspace apps/web eslint . --max-warnings=0
 
+  web-typecheck:
+    name: web typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck --workspace apps/web
+
+  web-tests:
+    name: web vitest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run test --workspace apps/web
+
   web-build:
     name: web build
     runs-on: ubuntu-latest
     env:
-      AUTH_SECRET: ci-dummy-32-chars-minimum-0123456789
-      NEXTAUTH_URL: http://localhost:3000
+      # NOT SECRETS: format-only placeholders ("foo-bar" base64) so `next build`
+      # passes Clerk key-shape validation with zero live calls. Real keys live
+      # in Vercel env only, never in repo.
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Zm9vLWJhci5jbGVyay5hY2NvdW50cy5kZXYk
+      CLERK_SECRET_KEY: sk_test_Zm9vYmFyYmF6cXV4Nzg5MDEyMzQ1Njc4OTA=
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
     steps:
       - uses: actions/checkout@v6
@@ -81,6 +154,21 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build --workspace apps/web
+
+  web-audit:
+    name: web audit (prod blocking, dev allowlist)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      # Prod deps must be clean. Dev-only GHSA-vfj7-8cjw-p6xm (braces, no patch)
+      # is allowlisted in scripts/audit-web.js; anything new fails.
+      - run: npm run audit:web:prod
+      - run: npm run audit:web
 
   docker:
     name: docker build (api)

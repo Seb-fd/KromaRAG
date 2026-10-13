@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from app.agent import graph as agent_graph
-from app.agent.graph import AgentDeps
+from app.agent.graph import AgentDeps, AgentState
 from app.agent.prompts import FRIENDLY_LLM_DOWN
 from app.core.security import require_role
 from app.schemas import Principal, QueryRequest
@@ -145,7 +145,7 @@ async def load_truncated_history(deps: AgentDeps, conv_id: str) -> tuple[list, i
 
 
 async def persist_turn(deps: AgentDeps, principal: Principal, conv_id: str,
-                       user_content: str, state: dict) -> None:
+                       user_content: str, state: AgentState) -> None:
     """Best-effort atomic pair write (specs/06 §4.2). Never raises."""
     from app.services import conversations as conv_svc
 
@@ -163,22 +163,22 @@ async def persist_turn(deps: AgentDeps, principal: Principal, conv_id: str,
 
 
 def _initial_state(body: QueryRequest, principal: Principal, trace_id: str, conv_id: str,
-                   history: list | None = None, history_tokens: int = 0) -> dict:
+                   history: list | None = None, history_tokens: int = 0) -> AgentState:
     from app.core.config import settings
 
-    return {
-        "query": body.query.strip(),
-        "principal_sub": principal.sub,
-        "principal_roles": list(principal.roles),
-        "top_k": max(1, min(int(body.top_k or settings.top_k_default), 20)),
-        "trace_id": trace_id,
-        "conv_id": conv_id,
-        "history": list(history or []),
-        "history_tokens": int(history_tokens or 0),
-    }
+    return AgentState(
+        query=body.query.strip(),
+        principal_sub=principal.sub,
+        principal_roles=list(principal.roles),
+        top_k=max(1, min(int(body.top_k or settings.top_k_default), 20)),
+        trace_id=trace_id,
+        conv_id=conv_id,
+        history=list(history or []),
+        history_tokens=int(history_tokens or 0),
+    )
 
 
-def _source_data(state: dict) -> str:
+def _source_data(state: AgentState) -> str:
     return json.dumps({"chunks": [
         {"chunk_id": c["chunk_id"], "doc_id": c["doc_id"], "title": c["title"],
          "ord": c["ord"], "score": c["score"]}
@@ -186,7 +186,7 @@ def _source_data(state: dict) -> str:
     ]})
 
 
-def _done_data(state: dict, conv_id: str, trace_id: str, traceparent: str | None = None) -> str:
+def _done_data(state: AgentState, conv_id: str, trace_id: str, traceparent: str | None = None) -> str:
     usage = state.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0, "model": ""}
     payload = {
         "conv_id": conv_id, "trace_id": trace_id,
@@ -202,8 +202,9 @@ def _done_data(state: dict, conv_id: str, trace_id: str, traceparent: str | None
     else:
         # Additive trace linkage for direct/unit invocations without HTTP context.
         try:
-            from app.core.tracecontext import build_traceparent
             import secrets as _secrets
+
+            from app.core.tracecontext import build_traceparent
 
             payload["traceparent"] = build_traceparent(trace_id, _secrets.token_hex(8), True)
         except Exception:
@@ -230,7 +231,7 @@ def _parse_fallback_code(fallback_error: str | None) -> str:
         return "LLM_ERROR"
 
 
-def _record_query_metrics(state: dict, trace_id: str, sse_outcome: str = "done",
+def _record_query_metrics(state: AgentState, trace_id: str, sse_outcome: str = "done",
                           sse_duration_s: float = 0.0, route: str = "POST /api/v1/query") -> None:
     """Best-effort RED/USE increments for a completed query (spec 09 §3.3)."""
     try:
@@ -244,8 +245,8 @@ def _record_query_metrics(state: dict, trace_id: str, sse_outcome: str = "done",
             _m.inc_fallback(_settings.gemini_model, model or _settings.groq_model, code)
         try:
             n_tok = state.get("_sse_token_frames")
-            if n_tok and model:
-                _m.inc_sse_tokens(model, int(n_tok))
+            if isinstance(n_tok, int) and n_tok and model:
+                _m.inc_sse_tokens(model, n_tok)
         except Exception:
             pass
         _m.observe_sse(route, sse_outcome, max(0.0, float(sse_duration_s or 0.0)))
@@ -291,12 +292,13 @@ async def run_query_events(body: QueryRequest, principal: Principal, deps: Agent
             state = await agent_graph.node_evaluator(state, deps)
             state.setdefault("history", history)
             state.setdefault("history_tokens", history_tokens)
-            if state.get("error") and state["error"].get("code"):
+            err = state.get("error") or {}
+            if err.get("code"):
                 # Total failure: both primary and fallback failed.
                 # Log raw backend-side, expose only friendly text client-side,
                 # then stream the friendly message as tokens so dumb SSE readers show it.
-                raw_code = str(state["error"].get("code", "LLM_ERROR"))
-                raw_msg = str(state["error"].get("message", ""))
+                raw_code = str(err.get("code", "LLM_ERROR"))
+                raw_msg = str(err.get("message", ""))
                 log.warning("llm total failure trace_id=%s code=%s raw=%.500s",
                             trace_id, raw_code, raw_msg)
                 yield {"event": "error", "data": json.dumps(
@@ -372,8 +374,9 @@ async def query(body: QueryRequest, request: Request, p: Principal = Depends(req
     traceparent = getattr(request.state, "traceparent", None)
     if not traceparent:
         try:
-            from app.core.tracecontext import build_traceparent
             import secrets as _secrets
+
+            from app.core.tracecontext import build_traceparent
 
             traceparent = build_traceparent(trace_id, _secrets.token_hex(8), True)
         except Exception:
@@ -387,10 +390,11 @@ async def query(body: QueryRequest, request: Request, p: Principal = Depends(req
         state.setdefault("history", history)
         state.setdefault("history_tokens", history_tokens)
         usage = state.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0, "model": ""}
-        if state.get("error") and state["error"].get("code"):
+        err_ns = state.get("error") or {}
+        if err_ns.get("code"):
             # Sanitize raw LLM error for JSON clients; raw stays in logs via node_generator.
             log.warning("llm total failure (non-stream) trace_id=%s code=%s raw=%.500s",
-                        trace_id, state["error"].get("code"), str(state["error"].get("message", "")))
+                        trace_id, err_ns.get("code"), str(err_ns.get("message", "")))
             state["answer"] = FRIENDLY_LLM_DOWN
         try:
             await persist_turn(deps, p, conv_id, body.query.strip(), state)
@@ -412,10 +416,8 @@ async def query(body: QueryRequest, request: Request, p: Principal = Depends(req
         return JSONResponse(payload, headers=headers)
 
     async def gen():
-        disconnected = False
         async for frame in run_query_events(body, p, deps, trace_id, conv_id, traceparent):
             if await request.is_disconnected():
-                disconnected = True
                 try:
                     from app.services import metrics as _m
 

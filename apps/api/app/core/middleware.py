@@ -109,8 +109,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         from app.core.config import settings
-        from app.main import app as _app  # local import: avoids circular at module load
         from app.core.security import get_current_principal
+        from app.main import app as _app  # local import: avoids circular at module load
 
         path = request.url.path
         if _is_exempt(path):

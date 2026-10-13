@@ -4,9 +4,7 @@ Offline (fakes); metrics store reset per test for isolation."""
 from __future__ import annotations
 
 import json
-import time
 
-import jwt
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -14,14 +12,15 @@ from app.agent import graph as G
 from app.agent.graph import AgentDeps
 from app.agent.llm import GenerateResult, LLMError
 from app.api.v1 import query as query_mod
+from app.core import security as sec
 from app.core import tracecontext as tc
 from app.core.config import settings
-from app.core import security as sec
 from app.core.security import get_current_principal
 from app.main import app
 from app.schemas import Principal
 from app.services import metrics as m
 from app.services.retriever import RetrievedChunk
+from tests._clerk import CLERK_KID, clerk_token, install_clerk
 
 ME = Principal(sub="u1", email="u1@x.com", roles=["viewer"])
 C1 = RetrievedChunk(chunk_id="c1", doc_id="d1", title="Doc",
@@ -75,19 +74,20 @@ async def _no_jwks() -> list[dict]:
     return []
 
 
-def _signed_token(secret: str, sub: str = "svc", roles: list[str] | None = None) -> str:
-    now = int(time.time())
-    payload = {
-        "sub": sub,
-        "email": f"{sub}@x.com",
-        "roles": roles or ["admin"],
-        "iss": settings.jwt_issuer,
-        "aud": settings.jwt_audience,
-        "exp": now + 3600,
-        "iat": now,
-        "jti": "t9",
-    }
-    return jwt.encode(payload, secret, algorithm="HS256")
+def _signed_token(secret: str = "", sub: str = "svc", roles: list[str] | None = None) -> str:
+    """Clerk RS256 test token (ignores legacy `secret` arg for back-compat).
+
+    Callers historically passed settings.effective_current_secret; the Clerk
+    cutover mints RS256 with the local test key instead. Install the matching
+    JWKS via install_clerk() before hitting authed routes.
+    """
+    _ = secret
+    sub = sub if sub.startswith("user_") else f"user_{sub}"
+    return clerk_token(sub=sub, roles=roles or ["admin"], kid=CLERK_KID)
+
+
+def _install(monkeypatch) -> None:
+    install_clerk(monkeypatch, sec, settings, current_kids=[CLERK_KID])
 
 
 def _frames(text: str):
@@ -180,7 +180,7 @@ async def test_trace_headers_on_health_and_404(authed):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.get("/healthz", headers={"traceparent": TP_VALID})
         assert r.headers["X-Trace-Id"] == TP_TRACE_DASH
-        assert "traceparent" in {k.lower() for k in r.headers.keys()}
+        assert "traceparent" in {k.lower() for k in r.headers}
         n = await c.get("/no-such-route-xyz", headers={"traceparent": TP_VALID})
         assert n.status_code == 404
         assert n.headers["X-Trace-Id"] == TP_TRACE_DASH
@@ -218,7 +218,7 @@ async def test_metrics_untrusted_network_404(monkeypatch):
         r = await c.get("/metrics")
     assert r.status_code == 404
     assert r.json() == {"detail": {"code": "NOT_FOUND", "message": "not found"}}
-    assert r.headers["X-Trace-Id"] and "traceparent" in {k.lower() for k in r.headers.keys()}
+    assert r.headers["X-Trace-Id"] and "traceparent" in {k.lower() for k in r.headers}
 
 
 @pytest.mark.asyncio
@@ -233,7 +233,7 @@ async def test_metrics_trusted_no_jwt_401(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_metrics_viewer_403(monkeypatch):
-    monkeypatch.setattr(sec, "_get_jwks", _no_jwks)
+    _install(monkeypatch)
     _trust(monkeypatch)
     tok = _signed_token(settings.effective_current_secret, sub="alice", roles=["viewer"])
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -245,7 +245,7 @@ async def test_metrics_viewer_403(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_metrics_admin_200_prometheus_shape(monkeypatch, authed):
-    monkeypatch.setattr(sec, "_get_jwks", _no_jwks)
+    _install(monkeypatch)
     _trust(monkeypatch)
     # Generate traffic so histograms carry exemplars.
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -272,7 +272,7 @@ async def test_metrics_admin_200_prometheus_shape(monkeypatch, authed):
 
 @pytest.mark.asyncio
 async def test_metrics_exempt_from_rate_limit(monkeypatch):
-    monkeypatch.setattr(sec, "_get_jwks", _no_jwks)
+    _install(monkeypatch)
     monkeypatch.setattr(settings, "rate_limit_unauth_per_min", 1)
     _trust(monkeypatch)
     tok = _signed_token(settings.effective_current_secret, sub="svc", roles=["admin"])
@@ -285,7 +285,7 @@ async def test_metrics_exempt_from_rate_limit(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fallback_counter_increments(monkeypatch, authed):
-    monkeypatch.setattr(sec, "_get_jwks", _no_jwks)
+    _install(monkeypatch)
     _trust(monkeypatch)
     monkeypatch.setattr(query_mod, "resolve_deps",
                         lambda: AgentDeps(db=object(), gemini_fn=_fail_429, groq_fn=_groq_ok))
