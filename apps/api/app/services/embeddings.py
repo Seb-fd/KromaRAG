@@ -14,6 +14,7 @@ import asyncio
 import logging
 import time
 from collections import OrderedDict
+from typing import Any, cast
 
 import httpx
 
@@ -116,7 +117,7 @@ def _sdk_embed_batch_sync(texts: list[str], model: str, key: str) -> list[list[f
     if _wants_truncation(model):
         kwargs["config"] = types.EmbedContentConfig(output_dimensionality=DIM)
     try:
-        res = client.models.embed_content(model=model, contents=texts, **kwargs)  # type: ignore[arg-type]
+        res = client.models.embed_content(model=model, contents=cast(Any, texts), **kwargs)
     except Exception as e:  # noqa: BLE001 — reformat below
         raise _format_sdk_error(e, model) from e
     try:

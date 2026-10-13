@@ -349,7 +349,7 @@ def build_graph(deps: AgentDeps | None = None):
     async def _evaluator(s: AgentState) -> AgentState:
         return await node_evaluator(s, deps)
 
-    g = StateGraph(AgentState)
+    g: Any = StateGraph(AgentState)  # Any: langgraph add_node overloads vary by version; wiring is runtime-tested
     g.add_node("router", _router)
     g.add_node("retriever", _retriever)
     g.add_node("reranker", _reranker)
