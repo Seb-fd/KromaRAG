@@ -11,7 +11,11 @@ services:
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: ./apps/api
     region: frankfurt
-    plan: starter
+    # Free tier: no card required (750 hrs/mo). Sleeps after ~15 min idle --
+    # acceptable for staging/demo; /readyz reports warmup honestly. Single
+    # instance keeps the in-memory limiter math exact. Do NOT raise to starter
+    # without a billing decision (spec:check pins this).
+    plan: free
     healthCheckPath: /healthz
     autoDeploy: false
     envVars:
