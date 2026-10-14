@@ -22,14 +22,29 @@ function warn(msg) {
  * - bare hosts (`api.example.com` -> `https://api.example.com`)
  * - single-slash schemes (`https:/host` -> `https://host`, via URL parsing)
  * - trailing slashes / whitespace / embedded paths (origin only)
- * Returns "" for empty input (same-origin proxy mode) and FALLBACK for
- * unparseable/non-http(s) values (with a loud warning). Never returns a
- * scheme-less absolute-looking string — those misparse as relative URLs and
- * get `window.location.origin` prepended by fetch (`/https:/host/...` 404s).
+ * - edge paste corruption: surrounding quotes, trailing slashes/whitespace,
+ *   and invisible chars (DEL/ZWSP/BOM/controls) at the EDGES are stripped.
+ * Security rule: invisible chars in the INTERIOR are NOT stripped — removing
+ * them would forge a novel hostname (e.g. `stag<ZWSP>ing.x` collapsing to a
+ * different host) that could receive the Clerk Bearer token. Interior
+ * corruption fails closed (warn + FALLBACK) instead.
+ * Returns "" for empty input (same-origin proxy mode) and FALLBACK otherwise
+ * unusable (with a loud warning). Never returns a scheme-less
+ * absolute-looking string — those misparse as relative URLs and get
+ * `window.location.origin` prepended by fetch (`/https:/host/...` 404s).
  */
+const EDGE_LEAD = /^[\u0000-\u0020\u007F-\u009F\u200B-\u200D\uFEFF'"]+/;
+const EDGE_TRAIL = /[\u0000-\u0020\u007F-\u009F\u200B-\u200D\uFEFF'"/]+$/;
+const INTERIOR_JUNK = /[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/;
+
 function normalizeApiBaseUrl(value) {
-  const raw = String(value ?? "").trim().replace(/\/+$/, "");
+  const raw = String(value ?? "").replace(EDGE_LEAD, "").replace(EDGE_TRAIL, "");
   if (!raw) return "";
+  if (raw.startsWith("/")) return raw;
+  if (INTERIOR_JUNK.test(raw)) {
+    warn(`refusing API base with interior control/invisible chars ${JSON.stringify(raw)} — falling back to ${FALLBACK}`);
+    return FALLBACK;
+  }
   if (raw.startsWith("/")) return raw;
   // Repair single-slash schemes (`https:/host` — the exact baked value that
   // broke the Vercel build): URL parsing alone mangles these, so restore the

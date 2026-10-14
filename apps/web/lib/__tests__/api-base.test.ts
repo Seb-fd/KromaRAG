@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { API_BASE_FALLBACK, normalizeApiBaseUrl, resolveApiBase } from "@/lib/api-base";
 
+// Invisible fixtures are ALWAYS built from char codes below: literal
+// invisible bytes must never live in source (editors/linters strip them
+// silently, hollowing the tests).
+const ZWSP = String.fromCharCode(0x200b);
+const BEL = String.fromCharCode(0x07);
+const BOM = String.fromCharCode(0xfeff);
+const DQ = String.fromCharCode(0x22);
+const SQ = String.fromCharCode(0x27);
+
 describe("normalizeApiBaseUrl (client fetch bases)", () => {
   it("passes correct absolute URLs through (minus trailing slash)", () => {
     expect(normalizeApiBaseUrl("https://kromarag-api-staging.onrender.com")).toBe(
@@ -35,6 +44,29 @@ describe("normalizeApiBaseUrl (client fetch bases)", () => {
     try {
       expect(normalizeApiBaseUrl("ftp://x.example")).toBe(API_BASE_FALLBACK);
       expect(normalizeApiBaseUrl("javascript:alert(1)")).toBe(API_BASE_FALLBACK);
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("strips edge paste corruption (quotes, BOM, trailing controls)", () => {
+    const good = "https://kromarag-api-staging.onrender.com";
+    expect(normalizeApiBaseUrl(DQ + good + DQ)).toBe(good);
+    expect(normalizeApiBaseUrl(SQ + good + SQ)).toBe(good);
+    expect(normalizeApiBaseUrl(ZWSP + good + ZWSP)).toBe(good);
+    expect(normalizeApiBaseUrl(BOM + good)).toBe(good);
+    expect(normalizeApiBaseUrl(good + BEL)).toBe(good);
+    expect(normalizeApiBaseUrl(good + "/")).toBe(good);
+  });
+
+  it("refuses interior invisible chars instead of forging a host", () => {
+    // Stripping an interior ZWSP would silently route the Clerk Bearer token
+    // to a novel hostname — fail closed with a warning instead.
+    const evil = `https://kromarag-api-staging${ZWSP}onrender.com`;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(normalizeApiBaseUrl(evil)).toBe(API_BASE_FALLBACK);
       expect(warn).toHaveBeenCalled();
     } finally {
       warn.mockRestore();
