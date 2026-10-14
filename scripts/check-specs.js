@@ -43,6 +43,9 @@ else {
   for (const k of ['healthCheckPath: /healthz', './apps/api/Dockerfile', 'ENV', 'DATABASE_URL', 'JWT_ISSUER', 'CORS_ORIGINS', 'KromaRAG-staging']) {
     if (!bp.includes(k)) { console.error(`FAIL: render.yaml missing ${k}`); fail = 1; }
   }
+  // Free tier pinned: Starter triggers Render payment info. Raise only with a billing decision.
+  if (!/plan:\s*free\b/.test(bp)) { console.error('FAIL: render.yaml must pin plan: free (no-card staging)'); fail = 1; }
+  if (/plan:\s*starter\b/.test(bp)) { console.error('FAIL: render.yaml must not use plan: starter (requires payment info)'); fail = 1; }
   for (const k of ['DATABASE_URL', 'DATABASE_URL_SYNC', 'GOOGLE_API_KEY', 'GROQ_API_KEY', 'LANGSMITH_API_KEY']) {
     const re = new RegExp(`- key: ${k}\\s+sync: false`);
     if (!re.test(bp)) { console.error(`FAIL: render.yaml must declare ${k} with sync:false (dashboard-only secret)`); fail = 1; }

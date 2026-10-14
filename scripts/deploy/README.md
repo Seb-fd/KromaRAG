@@ -1,5 +1,12 @@
 # KromaRAG -- Production deploy runbook (Cloud Run + Vercel + Neon, europe-west1)
 
+> Render alternative (no card): repo-root `render.yaml` Blueprint deploys
+> `apps/api` staging on the free tier (`plan: free`, pinned by spec:check).
+> Dashboard -> New -> Blueprint -> connect repo -> enter the 5 `sync: false`
+> secrets -> deploy. Web stays Vercel (point Preview `NEXT_PUBLIC_API_URL`
+> at the `*.onrender.com` URL). Free sleeps after ~15 min idle; single
+> instance keeps the limiter math exact.
+
 Target: web `https://kromarag.vercel.app`, API Cloud Run `europe-west1`, Neon pooled prod + `staging` branch.
 Scripts here are the executable form of this runbook. `.sh` = Cloud Shell/bash (4.4+;
 the scripts use arrays), `.ps1` = local Windows PowerShell 5.1+. Both do the same.
