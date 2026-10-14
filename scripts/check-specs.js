@@ -63,9 +63,14 @@ if (!nc.includes('resolveApiBase')) { console.error('FAIL: next.config.js must r
 if (!fs.existsSync(path.join(root, 'apps/web/lib/api-base.js'))) { console.error('MISSING apps/web/lib/api-base.js'); fail = 1; }
 // Client fetch bases must share the normalizer — raw `NEXT_PUBLIC_API_URL ?? "http..."`
 // fallbacks misparse single-slash values as relative URLs (origin prepend 404s).
+// apiBase() itself must delegate (and warn on unset) rather than inline its own logic.
 for (const f of ['apps/web/lib/api-client.ts', 'apps/web/lib/store.tsx']) {
   const src = fs.readFileSync(path.join(root, f), 'utf8');
   if (src.includes('NEXT_PUBLIC_API_URL ?? "http')) { console.error(`FAIL: ${f} must not raw-fallback NEXT_PUBLIC_API_URL (use lib/api-base normalization)`); fail = 1; }
+}
+{
+  const client = fs.readFileSync(path.join(root, 'apps/web/lib/api-client.ts'), 'utf8');
+  if (!client.includes('normalizeApiBaseUrl') || !client.includes('unset at build')) { console.error('FAIL: lib/api-client.ts apiBase() must normalize and warn on unset env'); fail = 1; }
 }
 // Spec 06 — conversations & history deltas present
 const c6 = fs.readFileSync(path.join(root, 'specs/06_conversations_and_history_spec.md'), 'utf8');

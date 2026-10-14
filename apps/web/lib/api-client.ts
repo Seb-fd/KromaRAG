@@ -42,7 +42,7 @@ export function useProxy(): boolean {
   return process.env.NEXT_PUBLIC_USE_PROXY === "1";
 }
 
-import { normalizeApiBaseUrl } from "@/lib/api-base";
+import { API_BASE_FALLBACK, normalizeApiBaseUrl } from "@/lib/api-base";
 
 export function apiBase(): string {
   // Same-origin rewrite proxy (next.config.js rewrites()): relative URLs hit
@@ -51,7 +51,20 @@ export function apiBase(): string {
   // scheme-less or single-slash value can never misparse as a relative URL
   // (which fetch resolves against window.location.origin -> 404).
   if (process.env.NEXT_PUBLIC_USE_PROXY === "1") return "";
-  return normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_URL ?? "") || "http://127.0.0.1:8000";
+  const raw = process.env.NEXT_PUBLIC_API_URL ?? "";
+  if (!raw.trim()) {
+    // NEXT_PUBLIC_* inlines at BUILD time: an unset var means the serving
+    // bundle predates the Vercel env (or wrong scope) — warn loudly instead
+    // of silently hitting localhost and surfacing API_UNREACHABLE.
+    if (typeof console !== "undefined") {
+      console.warn(
+        "[kroma] NEXT_PUBLIC_API_URL unset at build — API calls fall back to localhost " +
+          "(rebuild web after setting it in the matching Vercel environment)"
+      );
+    }
+    return API_BASE_FALLBACK;
+  }
+  return normalizeApiBaseUrl(raw) || API_BASE_FALLBACK;
 }
 
 function mapStatus(status: number, fallback: string): string {
