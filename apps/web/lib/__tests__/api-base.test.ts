@@ -50,24 +50,42 @@ describe("normalizeApiBaseUrl (client fetch bases)", () => {
     }
   });
 
-  it("strips edge paste corruption (quotes, BOM, trailing controls)", () => {
+  it("strips edge paste corruption (quotes, BOM, trailing controls, NBSP)", () => {
+    const NBSP = String.fromCharCode(0xa0);
     const good = "https://kromarag-api-staging.onrender.com";
     expect(normalizeApiBaseUrl(DQ + good + DQ)).toBe(good);
     expect(normalizeApiBaseUrl(SQ + good + SQ)).toBe(good);
     expect(normalizeApiBaseUrl(ZWSP + good + ZWSP)).toBe(good);
     expect(normalizeApiBaseUrl(BOM + good)).toBe(good);
     expect(normalizeApiBaseUrl(good + BEL)).toBe(good);
+    expect(normalizeApiBaseUrl(good + NBSP)).toBe(good);
+    expect(normalizeApiBaseUrl(NBSP + good + "  ")).toBe(good);
     expect(normalizeApiBaseUrl(good + "/")).toBe(good);
   });
 
   it("refuses interior invisible chars instead of forging a host", () => {
     // Stripping an interior ZWSP would silently route the Clerk Bearer token
     // to a novel hostname — fail closed with a warning instead.
+    const NBSP = String.fromCharCode(0xa0);
     const evil = `https://kromarag-api-staging${ZWSP}onrender.com`;
+    const evil2 = `https://kromarag-api-staging${NBSP}onrender.com`;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       expect(normalizeApiBaseUrl(evil)).toBe(API_BASE_FALLBACK);
+      expect(normalizeApiBaseUrl(evil2)).toBe(API_BASE_FALLBACK);
       expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("rejection diagnostics carry length and char codes", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      normalizeApiBaseUrl("ftp://x.example");
+      const msg = warn.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(msg).toMatch(/len=\d+/);
+      expect(msg).toMatch(/codes\[[0-9a-f ]+\]/);
     } finally {
       warn.mockRestore();
     }
