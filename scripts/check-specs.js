@@ -13,7 +13,7 @@ const need = [
   'specs/07_document_lifecycle_mgmt_spec.md',
   'specs/08_production_hardening_and_deployment_spec.md',
   'specs/09_telemetry_and_operations_spec.md',
-  '.env.example', 'README.md', 'apps/api/app/main.py', 'apps/web/app/page.tsx',
+  '.env.example', '.env.staging.example', 'render.yaml', 'README.md', 'apps/api/app/main.py', 'apps/web/app/page.tsx',
   'apps/api/migrations/001_kroma_schema.sql',
   'apps/api/migrations/002_conversations_history.sql',
   'apps/api/migrations/003_kroma_documents_lifecycle.sql',
@@ -34,6 +34,20 @@ else {
     if (!stg.includes(k)) { console.error(`FAIL: .env.staging.example missing ${k}`); fail = 1; }
   }
   if (/sk_(live|test)_[A-Za-z0-9]{10,}/.test(stg)) { console.error('FAIL: .env.staging.example must not contain real-looking secrets'); fail = 1; }
+}
+// Render Blueprint (staging API): health probe, Docker contract, secrets via dashboard only.
+const bpPath = path.join(root, 'render.yaml');
+if (!fs.existsSync(bpPath)) { console.error('MISSING render.yaml'); fail = 1; }
+else {
+  const bp = fs.readFileSync(bpPath, 'utf8');
+  for (const k of ['healthCheckPath: /healthz', './apps/api/Dockerfile', 'ENV', 'DATABASE_URL', 'JWT_ISSUER', 'CORS_ORIGINS', 'KromaRAG-staging']) {
+    if (!bp.includes(k)) { console.error(`FAIL: render.yaml missing ${k}`); fail = 1; }
+  }
+  for (const k of ['DATABASE_URL', 'DATABASE_URL_SYNC', 'GOOGLE_API_KEY', 'GROQ_API_KEY', 'LANGSMITH_API_KEY']) {
+    const re = new RegExp(`- key: ${k}\\s+sync: false`);
+    if (!re.test(bp)) { console.error(`FAIL: render.yaml must declare ${k} with sync:false (dashboard-only secret)`); fail = 1; }
+  }
+  if (/value:\s*(sk_|AIza|gsk_|npg_)/.test(bp)) { console.error('FAIL: render.yaml must not embed secret values'); fail = 1; }
 }
 const c2 = fs.readFileSync(path.join(root, 'specs/02-api-contracts.md'), 'utf8');
 for (const k of ['"sub"', '"roles"', 'JWT_ISSUER', 'get_current_principal']) {

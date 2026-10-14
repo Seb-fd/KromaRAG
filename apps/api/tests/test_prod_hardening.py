@@ -353,6 +353,28 @@ def test_fail_closed_missing_groq_key():
         s.validate_prod_guards()
 
 
+def test_trusted_hosts_covers_all_paas_suffixes():
+    """trusted_hosts() allowlists exact CORS hosts + every PaaS suffix
+    (Cloud Run, Vercel, Render, Koyeb) — specs/08 §3.1."""
+    from app.main import trusted_hosts
+
+    hosts = trusted_hosts(["https://kromarag-staging.vercel.app", "https://example.com"])
+    assert "kromarag-staging.vercel.app" in hosts
+    assert "example.com" in hosts
+    for suffix in ("*.run.app", "*.vercel.app", "*.onrender.com", "*.koyeb.app"):
+        assert suffix in hosts
+
+
+def test_trusted_hosts_ignores_bad_origins():
+    from app.main import trusted_hosts
+
+    assert trusted_hosts(["not-a-url", ""]) == sorted({"*.run.app", "*.vercel.app", "*.onrender.com", "*.koyeb.app"})
+    # None falls back to configured CORS origins (ambient .env may add hosts);
+    # PaaS suffixes are always present regardless.
+    for suffix in ("*.run.app", "*.vercel.app", "*.onrender.com", "*.koyeb.app"):
+        assert suffix in trusted_hosts(None)
+
+
 def test_prod_app_includes_trusted_host_middleware(monkeypatch):
     """main.py adds TrustedHostMiddleware only when ENV=production (specs/08 §3.1).
 
