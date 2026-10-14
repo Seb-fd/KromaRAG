@@ -56,6 +56,11 @@ const c2 = fs.readFileSync(path.join(root, 'specs/02-api-contracts.md'), 'utf8')
 for (const k of ['"sub"', '"roles"', 'JWT_ISSUER', 'get_current_principal']) {
   if (!c2.includes(k)) { console.error(`FAIL: 02-api-contracts.md missing ${k}`); fail = 1; }
 }
+// Rewrites must resolve via lib/api-base (bare-host normalization + safe
+// fallback) — raw env concatenation breaks `next build` on scheme-less values.
+const nc = fs.readFileSync(path.join(root, 'apps/web/next.config.js'), 'utf8');
+if (!nc.includes('resolveApiBase')) { console.error('FAIL: next.config.js must resolve rewrite bases via lib/api-base'); fail = 1; }
+if (!fs.existsSync(path.join(root, 'apps/web/lib/api-base.js'))) { console.error('MISSING apps/web/lib/api-base.js'); fail = 1; }
 // Spec 06 — conversations & history deltas present
 const c6 = fs.readFileSync(path.join(root, 'specs/06_conversations_and_history_spec.md'), 'utf8');
 for (const k of ['conv_id', 'HISTORY_MAX_TURNS', '404']) {

@@ -56,10 +56,14 @@ const nextConfig = {
   },
   // Same-origin proxy: lets the browser call /api/v1/*, /health(z), /ready(z)
   // on :3000 and have Next.js forward to FastAPI. Bypasses CORS/CSP/IPv6
-  // (localhost→::1) issues in dev. Prod (Vercel) calls Cloud Run directly via
+  // (localhost→::1) issues in dev. Prod (Vercel) calls the API directly via
   // NEXT_PUBLIC_API_URL, so set API_URL per env; never commit secrets here.
+  // resolveApiBase normalizes bare hosts (adds https://) and falls back safely
+  // so `next build` never fails on a missing/malformed env var (specs/02 §1).
   async rewrites() {
-    const api = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- CJS config: lib/api-base.js is dependency-free plain JS shared with Vitest
+    const { resolveApiBase } = require("./lib/api-base");
+    const api = resolveApiBase();
     return [
       { source: "/api/v1/:path*", destination: `${api}/api/v1/:path*` },
       { source: "/health", destination: `${api}/health` },
