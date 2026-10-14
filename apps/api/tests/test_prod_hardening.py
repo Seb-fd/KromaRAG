@@ -353,6 +353,37 @@ def test_fail_closed_missing_groq_key():
         s.validate_prod_guards()
 
 
+def test_prod_app_includes_trusted_host_middleware(monkeypatch):
+    """main.py adds TrustedHostMiddleware only when ENV=production (specs/08 §3.1).
+
+    Reloads app.main against prod-like settings, then restores. The singleton
+    Settings is patched (not env), so local .env files cannot leak in.
+    """
+    import importlib
+
+    import app.main as main_mod
+    from app.core import config as cfg
+
+    prod = _prod_settings(
+        cors_origins=["https://kromarag-staging.vercel.app"],
+        jwt_issuer="https://kromarag-dev.clerk.accounts.dev",
+    )
+    monkeypatch.setattr(cfg.settings, "env", prod.env)
+    monkeypatch.setattr(cfg.settings, "cors_origins", prod.cors_origins)
+    monkeypatch.setattr(cfg.settings, "jwt_issuer", prod.jwt_issuer)
+    monkeypatch.setattr(cfg.settings, "jwt_audience", prod.jwt_audience)
+    monkeypatch.setattr(cfg.settings, "database_url", prod.database_url)
+    monkeypatch.setattr(cfg.settings, "google_api_key", prod.google_api_key)
+    monkeypatch.setattr(cfg.settings, "groq_api_key", prod.groq_api_key)
+    reloaded = importlib.reload(main_mod)
+    try:
+        kinds = [m.cls.__name__ for m in reloaded.app.user_middleware]
+        assert "TrustedHostMiddleware" in kinds
+        assert "CORSMiddleware" in kinds
+    finally:
+        importlib.reload(main_mod)
+
+
 # ── Prod verify hygiene (dev HS256 filter kept harmlessly; Clerk is prod path) ──
 
 def test_prod_verify_drops_documented_legacy_default():

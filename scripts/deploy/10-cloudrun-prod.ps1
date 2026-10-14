@@ -21,6 +21,9 @@ if (-not $env:GCP_PROJECT_ID) { throw "Set `$env:GCP_PROJECT_ID to your GCP proj
 if (-not $env:CLERK_ISSUER) { throw "Set `$env:CLERK_ISSUER to the Clerk prod issuer (https://<app>.clerk.accounts.dev)" }
 $Region  = if ($env:REGION)  { $env:REGION }  else { "europe-west1" }
 $Service = if ($env:SERVICE) { $env:SERVICE } else { "kromarag-api" }
+# In-memory rate limiter (specs/08 §3.2, rate_limit.py): effective global limit
+# = per-instance limit x instances. Cap at 3 until the Redis swap lands.
+$MaxInstances = if ($env:MAX_INSTANCES) { $env:MAX_INSTANCES } else { "3" }
 $WebHost = if ($env:WEB_HOST) { $env:WEB_HOST } else { "kromarag.vercel.app" }
 $WebUrl  = "https://$WebHost"
 $ClerkIssuer = $env:CLERK_ISSUER
@@ -34,7 +37,7 @@ if ($env:METRICS_SCRAPE_ALLOWLIST) { $MetricsEnv = @("--set-env-vars", "METRICS_
 $JwksEnv = @()
 if ($env:CLERK_JWKS_URL) { $JwksEnv = @("--set-env-vars", "CLERK_JWKS_URL=$($env:CLERK_JWKS_URL)") }
 
-Write-Host "==> project=$($env:GCP_PROJECT_ID) region=$Region service=$Service web=$WebUrl clerk_issuer=$ClerkIssuer tag=$ImageTag revision-suffix=$RevisionSuffix"
+Write-Host "==> project=$($env:GCP_PROJECT_ID) region=$Region service=$Service web=$WebUrl clerk_issuer=$ClerkIssuer tag=$ImageTag revision-suffix=$RevisionSuffix max-instances=$MaxInstances"
 gcloud config set project $env:GCP_PROJECT_ID | Out-Null
 
 Write-Host "==> deploying $Service (source: apps/api) ..."
@@ -45,7 +48,7 @@ Write-Host "==> deploying $Service (source: apps/api) ..."
   --concurrency 80 `
   --timeout 300s `
   --min-instances 1 `
-  --max-instances 20 `
+  --max-instances $MaxInstances `
   --cpu 2 `
   --memory 2Gi `
   --no-cpu-throttling `

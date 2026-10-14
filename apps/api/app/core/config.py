@@ -21,7 +21,10 @@ def _is_insecure_secret(value: str) -> bool:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=(".env", "../.env", "../../.env"), extra="ignore")
+    # enable_decoding=False: env values reach _parse_cors as raw strings, so
+    # bare origins (deploy scripts pass CORS_ORIGINS=https://host) and
+    # comma-separated lists work — not just JSON arrays (specs/08 §6).
+    model_config = SettingsConfigDict(env_file=(".env", "../.env", "../../.env"), extra="ignore", enable_decoding=False)
 
     env: str = "development"
 

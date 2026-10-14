@@ -13,6 +13,8 @@ if (-not $env:CLERK_ISSUER_STAGING) { throw "Set `$env:CLERK_ISSUER_STAGING to t
 $Region  = if ($env:REGION)  { $env:REGION }  else { "europe-west1" }
 $Service = if ($env:SERVICE) { $env:SERVICE } else { "kromarag-api-staging" }
 $WebHost = if ($env:STAGING_WEB_HOST) { $env:STAGING_WEB_HOST } else { "kromarag-staging.vercel.app" }
+# Same in-memory-limiter cap as prod (specs/08 §3.2): max 3 until Redis lands.
+$MaxInstances = if ($env:MAX_INSTANCES) { $env:MAX_INSTANCES } else { "3" }
 $WebUrl  = "https://$WebHost"
 $ClerkIssuer = $env:CLERK_ISSUER_STAGING
 $ImageTag = if ($env:IMAGE_TAG) { $env:IMAGE_TAG } else { "git-manual" }
@@ -25,7 +27,7 @@ if ($env:METRICS_SCRAPE_ALLOWLIST) { $MetricsEnv = @("--set-env-vars", "METRICS_
 $JwksEnv = @()
 if ($env:CLERK_JWKS_URL_STAGING) { $JwksEnv = @("--set-env-vars", "CLERK_JWKS_URL=$($env:CLERK_JWKS_URL_STAGING)") }
 
-Write-Host "==> project=$($env:GCP_PROJECT_ID) region=$Region service=$Service staging-web=$WebUrl clerk_issuer=$ClerkIssuer tag=$ImageTag revision-suffix=$RevisionSuffix"
+Write-Host "==> project=$($env:GCP_PROJECT_ID) region=$Region service=$Service staging-web=$WebUrl clerk_issuer=$ClerkIssuer tag=$ImageTag revision-suffix=$RevisionSuffix max-instances=$MaxInstances"
 gcloud config set project $env:GCP_PROJECT_ID | Out-Null
 
 & gcloud run deploy $Service `
@@ -35,7 +37,7 @@ gcloud config set project $env:GCP_PROJECT_ID | Out-Null
   --concurrency 80 `
   --timeout 300s `
   --min-instances 0 `
-  --max-instances 5 `
+  --max-instances $MaxInstances `
   --cpu 2 `
   --memory 2Gi `
   --no-cpu-throttling `
