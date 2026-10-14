@@ -32,7 +32,10 @@ an unchanged SHA.
 2. GCP billing alert (specs/08 SCALE-02/NFRs: `max-instances` capped **with cost alert**):
    Billing -> Budgets & alerts -> create budget on the project (e.g. 50/100/200% of
    expected monthly) with email + Pub/Sub notifications. Deploy scripts cap
-   `--max-instances 20` (prod) / `5` (staging); the budget alert is the second rail.
+   `--max-instances 3` (prod + staging, override via `MAX_INSTANCES`/`$env:MAX_INSTANCES`);
+   the budget alert is the second rail. The cap of 3 is load-bearing for the
+   in-memory rate limiter (specs/08 §3.2: effective global limit = per-instance
+   limit x instances) -- raise it only together with the Redis limiter swap.
 3. Neon: create project in `europe-west1` (or closest), then create branch `staging` from `main`.
    For each branch copy TWO URLs from the Neon dashboard:
    - Pooled (runtime): `...-pooler.<region>.neon.tech:5432/<db>?sslmode=require` -> prefix `postgresql+asyncpg://`

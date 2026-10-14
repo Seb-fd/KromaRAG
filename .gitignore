@@ -25,6 +25,7 @@ venv/
 
 # Env / secrets
 .env
+.env.staging
 .env.local
 .env.production
 .env.*.local

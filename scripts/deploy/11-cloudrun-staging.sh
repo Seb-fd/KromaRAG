@@ -14,6 +14,8 @@ set -euo pipefail
 : "${CLERK_ISSUER_STAGING:?Set CLERK_ISSUER_STAGING to the Clerk dev issuer (https://<dev-app>.clerk.accounts.dev)}"
 REGION="${REGION:-europe-west1}"
 SERVICE="${SERVICE:-kromarag-api-staging}"
+# Same in-memory-limiter cap as prod (specs/08 §3.2): max 3 until Redis lands.
+MAX_INSTANCES="${MAX_INSTANCES:-3}"
 STAGING_WEB_HOST="${STAGING_WEB_HOST:-kromarag-staging.vercel.app}"
 STAGING_WEB_URL="https://${STAGING_WEB_HOST}"
 IMAGE_TAG="${IMAGE_TAG:-git-$(git rev-parse --short HEAD 2>/dev/null || echo manual)}"
@@ -30,7 +32,7 @@ else
   JWKS_ENV=()
 fi
 
-echo "==> project=${GCP_PROJECT_ID} region=${REGION} service=${SERVICE} tag=${IMAGE_TAG} revision-suffix=${REVISION_SUFFIX}"
+echo "==> project=${GCP_PROJECT_ID} region=${REGION} service=${SERVICE} tag=${IMAGE_TAG} revision-suffix=${REVISION_SUFFIX} max-instances=${MAX_INSTANCES}"
 echo "==> staging web=${STAGING_WEB_URL} clerk_issuer=${CLERK_ISSUER_STAGING}"
 gcloud config set project "${GCP_PROJECT_ID}" >/dev/null
 
@@ -41,7 +43,7 @@ gcloud run deploy "${SERVICE}" \
   --concurrency 80 \
   --timeout 300s \
   --min-instances 0 \
-  --max-instances 5 \
+  --max-instances "${MAX_INSTANCES}" \
   --cpu 2 \
   --memory 2Gi \
   --no-cpu-throttling \

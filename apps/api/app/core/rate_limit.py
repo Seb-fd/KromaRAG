@@ -3,6 +3,13 @@
 In-memory Phase 1 with a Redis-compatible signature so the backend swap is
 non-breaking: check_limit(key, limit, window_s) -> (allowed, remaining, reset_s).
 
+MULTI-INSTANCE CONTRACT (load-bearing): buckets live per-process, so the
+effective global limit is `per-instance limit x Cloud Run instance count`.
+Deploy scripts enforce `--max-instances 3` (override: MAX_INSTANCES) to bound
+this multiplier until the Redis swap lands (specs/08 §3.2). Raising
+max-instances without Redis silently multiplies every bucket below — do not do
+it; the Redis swap keeps this module's call signature unchanged.
+
 Buckets (per spec):
   query        → per-sub,  RATE_LIMIT_QUERY_PER_MIN  (100)
   query:admin  → per-sub,  RATE_LIMIT_ADMIN_PER_MIN  (300)

@@ -25,6 +25,16 @@ const env = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
 if (!env.includes('DATABASE_URL=postgresql+asyncpg://')) { console.error('FAIL: DATABASE_URL must be generic postgresql+asyncpg://'); fail = 1; }
 if (!/^ENV=/m.test(env)) { console.error('FAIL: .env.example must document ENV (development/production switch, specs/08 §6)'); fail = 1; }
 if (/SUPABASE_(URL|ANON|SERVICE)/.test(env)) { console.error('FAIL: .env.example must not hard-depend on Supabase keys'); fail = 1; }
+// Staging matrix (specs/08 §6): template exists, runs prod guards, points at staging backends.
+const stgPath = path.join(root, '.env.staging.example');
+if (!fs.existsSync(stgPath)) { console.error('MISSING .env.staging.example'); fail = 1; }
+else {
+  const stg = fs.readFileSync(stgPath, 'utf8');
+  for (const k of ['ENV=production', '-pooler', 'KromaRAG-staging', 'kromarag-dev.clerk.accounts.dev', 'MAX_INSTANCES=3']) {
+    if (!stg.includes(k)) { console.error(`FAIL: .env.staging.example missing ${k}`); fail = 1; }
+  }
+  if (/sk_(live|test)_[A-Za-z0-9]{10,}/.test(stg)) { console.error('FAIL: .env.staging.example must not contain real-looking secrets'); fail = 1; }
+}
 const c2 = fs.readFileSync(path.join(root, 'specs/02-api-contracts.md'), 'utf8');
 for (const k of ['"sub"', '"roles"', 'JWT_ISSUER', 'get_current_principal']) {
   if (!c2.includes(k)) { console.error(`FAIL: 02-api-contracts.md missing ${k}`); fail = 1; }

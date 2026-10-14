@@ -29,6 +29,10 @@ set -euo pipefail
 : "${CLERK_ISSUER:?Set CLERK_ISSUER to the Clerk prod issuer (https://<app>.clerk.accounts.dev)}"
 REGION="${REGION:-europe-west1}"
 SERVICE="${SERVICE:-kromarag-api}"
+# In-memory rate limiter (specs/08 §3.2, rate_limit.py): effective global limit
+# = per-instance limit x instances. Cap at 3 until the Redis swap lands;
+# raise only together with Redis (or accept N x abuse math explicitly).
+MAX_INSTANCES="${MAX_INSTANCES:-3}"
 WEB_HOST="${WEB_HOST:-kromarag.vercel.app}"
 WEB_URL="https://${WEB_HOST}"
 IMAGE_TAG="${IMAGE_TAG:-git-$(git rev-parse --short HEAD 2>/dev/null || echo manual)}"
@@ -48,7 +52,7 @@ else
   JWKS_ENV=()
 fi
 
-echo "==> project=${GCP_PROJECT_ID} region=${REGION} service=${SERVICE} tag=${IMAGE_TAG} revision-suffix=${REVISION_SUFFIX}"
+echo "==> project=${GCP_PROJECT_ID} region=${REGION} service=${SERVICE} tag=${IMAGE_TAG} revision-suffix=${REVISION_SUFFIX} max-instances=${MAX_INSTANCES}"
 echo "==> web=${WEB_URL} clerk_issuer=${CLERK_ISSUER}"
 gcloud config set project "${GCP_PROJECT_ID}" >/dev/null
 
@@ -60,7 +64,7 @@ gcloud run deploy "${SERVICE}" \
   --concurrency 80 \
   --timeout 300s \
   --min-instances 1 \
-  --max-instances 20 \
+  --max-instances "${MAX_INSTANCES}" \
   --cpu 2 \
   --memory 2Gi \
   --no-cpu-throttling \
