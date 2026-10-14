@@ -42,12 +42,16 @@ export function useProxy(): boolean {
   return process.env.NEXT_PUBLIC_USE_PROXY === "1";
 }
 
+import { normalizeApiBaseUrl } from "@/lib/api-base";
+
 export function apiBase(): string {
   // Same-origin rewrite proxy (next.config.js rewrites()): relative URLs hit
   // :3000 and are forwarded to FastAPI, bypassing CORS/CSP/IPv6 issues.
-  // Prod (Vercel → Cloud Run) keeps absolute NEXT_PUBLIC_API_URL.
+  // Prod (Vercel) keeps the absolute NEXT_PUBLIC_API_URL, normalized so a
+  // scheme-less or single-slash value can never misparse as a relative URL
+  // (which fetch resolves against window.location.origin -> 404).
   if (process.env.NEXT_PUBLIC_USE_PROXY === "1") return "";
-  return process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+  return normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_URL ?? "") || "http://127.0.0.1:8000";
 }
 
 function mapStatus(status: number, fallback: string): string {

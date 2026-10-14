@@ -9,6 +9,7 @@ import {
   renameConversation as apiRenameConversation,
   deleteConversationThread as apiDeleteThread,
   createConversation as apiCreateConversation,
+  apiBase,
   ApiError,
   type ThreadMessage,
 } from "./api-client";
@@ -189,9 +190,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let stop = false;
     const ping = async () => {
       try {
-        const base = process.env.NEXT_PUBLIC_USE_PROXY === "1"
-          ? ""
-          : (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000");
+        const base = apiBase();
         const r = await fetch(`${base}/health`, { cache: "no-store", signal: AbortSignal.timeout(5000) });
         if (!stop) {
           setApiOnline(r.ok);
