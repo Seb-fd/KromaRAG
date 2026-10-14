@@ -61,6 +61,12 @@ for (const k of ['"sub"', '"roles"', 'JWT_ISSUER', 'get_current_principal']) {
 const nc = fs.readFileSync(path.join(root, 'apps/web/next.config.js'), 'utf8');
 if (!nc.includes('resolveApiBase')) { console.error('FAIL: next.config.js must resolve rewrite bases via lib/api-base'); fail = 1; }
 if (!fs.existsSync(path.join(root, 'apps/web/lib/api-base.js'))) { console.error('MISSING apps/web/lib/api-base.js'); fail = 1; }
+// Client fetch bases must share the normalizer — raw `NEXT_PUBLIC_API_URL ?? "http..."`
+// fallbacks misparse single-slash values as relative URLs (origin prepend 404s).
+for (const f of ['apps/web/lib/api-client.ts', 'apps/web/lib/store.tsx']) {
+  const src = fs.readFileSync(path.join(root, f), 'utf8');
+  if (src.includes('NEXT_PUBLIC_API_URL ?? "http')) { console.error(`FAIL: ${f} must not raw-fallback NEXT_PUBLIC_API_URL (use lib/api-base normalization)`); fail = 1; }
+}
 // Spec 06 — conversations & history deltas present
 const c6 = fs.readFileSync(path.join(root, 'specs/06_conversations_and_history_spec.md'), 'utf8');
 for (const k of ['conv_id', 'HISTORY_MAX_TURNS', '404']) {
