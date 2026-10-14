@@ -37,22 +37,29 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="KromaRAG API", version="0.1.0", lifespan=lifespan, server_header=False)
 
-# Host-header guard (specs/08 §3.1): prod allowlist derived from CORS_ORIGINS
-# + Cloud Run / Vercel suffixes. Non-prod allows all (tests use http://test).
+
+def trusted_hosts(cors_origins: list[str] | None = None) -> list[str]:
+    """Prod TrustedHost allowlist (specs/08 §3.1): exact CORS hosts + PaaS
+    suffixes for every supported target (Cloud Run, Vercel, Render, Koyeb).
+    Pure helper so the contract is unit-testable without app reloads."""
+    from urllib.parse import urlparse as _up
+
+    _hosts = set()
+    for _o in (cors_origins if cors_origins is not None else settings.cors_origins or []):
+        try:
+            _h = (_up(_o).hostname or "").strip().lower()
+            if _h:
+                _hosts.add(_h)
+        except Exception:
+            pass
+    return sorted(_hosts | {"*.run.app", "*.vercel.app", "*.onrender.com", "*.koyeb.app"})
+
+
+# Host-header guard (specs/08 §3.1): prod allowlist from trusted_hosts().
+# Non-prod allows all (tests use http://test).
 if settings.is_prod:
     try:
-        from urllib.parse import urlparse as _up
-
-        _hosts = set()
-        for _o in (settings.cors_origins or []):
-            try:
-                _h = (_up(_o).hostname or "").strip().lower()
-                if _h:
-                    _hosts.add(_h)
-            except Exception:
-                pass
-        _allow = sorted(_hosts | {"*.run.app", "*.vercel.app"})
-        app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(_allow))
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts())
     except Exception:
         pass
 

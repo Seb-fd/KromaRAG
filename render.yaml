@@ -1,0 +1,87 @@
+# KromaRAG -- Render Blueprint (staging API).
+# Deploys apps/api (FastAPI) from its Dockerfile: frozen uv.lock deps,
+# migrate-then-serve entrypoint, $PORT handling, /healthz checks.
+# Secrets (sync:false) are entered in the Render dashboard, never in git.
+# Specs/08 §2.2 (single worker), §3.1 (TrustedHost covers *.onrender.com),
+# §6 (prod guards: pooled Neon + sslmode, LLM keys, chaos off).
+services:
+  - type: web
+    name: kromarag-api-staging
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: ./apps/api
+    region: frankfurt
+    plan: starter
+    healthCheckPath: /healthz
+    autoDeploy: false
+    envVars:
+      - key: ENV
+        value: production
+      - key: PYTHONUNBUFFERED
+        value: 1
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_URL_SYNC
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: LANGSMITH_API_KEY
+        sync: false
+      - key: PGVECTOR_DIM
+        value: 768
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+      - key: EMBEDDING_MODEL
+        value: gemini-embedding-001
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: LLM_PRIMARY
+        value: gemini
+      - key: LLM_FALLBACK
+        value: groq
+      - key: JWT_ISSUER
+        value: https://kromarag-dev.clerk.accounts.dev
+      - key: JWT_AUDIENCE
+        value: kromarag-web
+      - key: CORS_ORIGINS
+        value: https://kromarag-staging.vercel.app
+      - key: LANGCHAIN_TRACING_V2
+        value: true
+      - key: LANGCHAIN_PROJECT
+        value: KromaRAG-staging
+      - key: LANGCHAIN_ENDPOINT
+        value: https://api.smith.langchain.com
+      - key: OTEL_ENABLED
+        value: true
+      - key: OTEL_SAMPLING_OK
+        value: 0.1
+      - key: OTEL_SAMPLING_ERROR
+        value: 1.0
+      - key: METRICS_ENABLED
+        value: true
+      - key: POOL_MIN_SIZE
+        value: 2
+      - key: POOL_MAX_SIZE
+        value: 20
+      - key: POOL_COMMAND_TIMEOUT
+        value: 10
+      - key: RATE_LIMIT_QUERY_PER_MIN
+        value: 100
+      - key: RATE_LIMIT_INGEST_PER_MIN
+        value: 20
+      - key: RATE_LIMIT_UNAUTH_PER_MIN
+        value: 10
+      - key: RATE_LIMIT_ADMIN_PER_MIN
+        value: 300
+      - key: RATE_LIMIT_READ_PER_MIN
+        value: 300
+      - key: LLM_TIMEOUT_S
+        value: 25
+      - key: LLM_FALLBACK_TIMEOUT_S
+        value: 12
+      - key: EMBED_TIMEOUT_S
+        value: 8
+      - key: RETRIEVER_TIMEOUT_MS
+        value: 3000
