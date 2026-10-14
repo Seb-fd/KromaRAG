@@ -144,6 +144,7 @@ describe("resolveApiBase (rewrite destinations)", () => {
   it("apiBase() uses the normalized absolute URL in direct mode", async () => {
     const prevProxy = process.env.NEXT_PUBLIC_USE_PROXY;
     const prevApi = process.env.NEXT_PUBLIC_API_URL;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const { apiBase } = await import("@/lib/api-client");
       process.env.NEXT_PUBLIC_USE_PROXY = "0";
@@ -154,6 +155,27 @@ describe("resolveApiBase (rewrite destinations)", () => {
       process.env.NEXT_PUBLIC_USE_PROXY = "1";
       expect(apiBase()).toBe("");
     } finally {
+      warn.mockRestore();
+      if (prevProxy === undefined) delete process.env.NEXT_PUBLIC_USE_PROXY;
+      else process.env.NEXT_PUBLIC_USE_PROXY = prevProxy;
+      if (prevApi === undefined) delete process.env.NEXT_PUBLIC_API_URL;
+      else process.env.NEXT_PUBLIC_API_URL = prevApi;
+    }
+  });
+
+  it("apiBase() warns loudly when the env var is missing at build", async () => {
+    const prevProxy = process.env.NEXT_PUBLIC_USE_PROXY;
+    const prevApi = process.env.NEXT_PUBLIC_API_URL;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { apiBase } = await import("@/lib/api-client");
+      process.env.NEXT_PUBLIC_USE_PROXY = "0";
+      delete process.env.NEXT_PUBLIC_API_URL;
+      expect(apiBase()).toBe("http://127.0.0.1:8000");
+      const msg = warn.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(msg).toMatch(/NEXT_PUBLIC_API_URL unset at build/);
+    } finally {
+      warn.mockRestore();
       if (prevProxy === undefined) delete process.env.NEXT_PUBLIC_USE_PROXY;
       else process.env.NEXT_PUBLIC_USE_PROXY = prevProxy;
       if (prevApi === undefined) delete process.env.NEXT_PUBLIC_API_URL;
