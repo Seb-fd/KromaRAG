@@ -36,11 +36,19 @@ export function AppShell() {
     if (user) clearDevBypass();
   }, [user]);
 
-  // Mobile: sidebar starts closed
+  // Mobile: sidebar starts closed; Esc dismisses the overlay drawer.
   useEffect(() => {
     if (window.innerWidth < 768) setSidebarOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && window.innerWidth < 768) setSidebarOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sidebarOpen, setSidebarOpen]);
 
   // Session still hydrating (fresh login lands here via proxy.ts) — show a
   // skeleton instead of flashing an empty/signed-out shell.
@@ -57,6 +65,12 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      <a
+        href="#kroma-composer"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-[var(--surface-solid)] focus:px-3 focus:py-1.5 focus:text-sm focus:ring-2 focus:ring-[var(--ring)]"
+      >
+        Skip to message composer
+      </a>
       {sidebarOpen && (
         <div className="fixed inset-0 z-20 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
