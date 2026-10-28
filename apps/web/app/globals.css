@@ -73,7 +73,8 @@ body {
 }
 
 /* Ambient gradient mesh — dark-first identity, lavender wash in light mode.
-   Fixed, pointer-transparent, sits behind all content. */
+   Fixed, pointer-transparent, sits behind all content. Deliberately quiet:
+   this is a reading surface, the login card is the bold moment. */
 body::before {
   content: "";
   position: fixed;
@@ -81,15 +82,17 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(42rem 26rem at 12% -6%, rgba(109, 92, 255, 0.16), transparent 60%),
-    radial-gradient(36rem 24rem at 88% 4%, rgba(143, 125, 255, 0.12), transparent 60%),
-    radial-gradient(48rem 30rem at 50% 115%, rgba(109, 92, 255, 0.08), transparent 60%);
+    radial-gradient(44rem 28rem at 50% -8%, rgba(109, 92, 255, 0.14), transparent 62%),
+    radial-gradient(42rem 26rem at 12% -6%, rgba(109, 92, 255, 0.12), transparent 60%),
+    radial-gradient(36rem 24rem at 88% 4%, rgba(143, 125, 255, 0.1), transparent 60%),
+    radial-gradient(48rem 30rem at 50% 115%, rgba(109, 92, 255, 0.07), transparent 60%);
 }
 :root body::before {
   background:
-    radial-gradient(42rem 26rem at 12% -6%, rgba(109, 92, 255, 0.12), transparent 60%),
-    radial-gradient(36rem 24rem at 88% 4%, rgba(87, 71, 227, 0.08), transparent 60%),
-    radial-gradient(48rem 30rem at 50% 115%, rgba(109, 92, 255, 0.06), transparent 60%);
+    radial-gradient(44rem 28rem at 50% -8%, rgba(109, 92, 255, 0.1), transparent 62%),
+    radial-gradient(42rem 26rem at 12% -6%, rgba(109, 92, 255, 0.1), transparent 60%),
+    radial-gradient(36rem 24rem at 88% 4%, rgba(87, 71, 227, 0.07), transparent 60%),
+    radial-gradient(48rem 30rem at 50% 115%, rgba(109, 92, 255, 0.05), transparent 60%);
 }
 
 /* Brand utilities */
@@ -149,8 +152,10 @@ body::before {
 .cursor-blink { animation: kroma-blink 1s step-end infinite; }
 .spinner { width: 14px; height: 14px; border-radius: 9999px; border: 2px solid var(--border); border-top-color: var(--accent); animation: kroma-spin 0.7s linear infinite; }
 
-/* Markdown body */
+/* Markdown body — prose capped at ~72ch for reading rhythm; code/tables
+   keep full bubble width and scroll horizontally (see table/code rules). */
 .md-body { font-size: 0.9rem; line-height: 1.65; overflow-wrap: anywhere; }
+.md-body p, .md-body li { max-width: 72ch; }
 .md-body p { margin: 0.45rem 0; }
 .md-body p:first-child { margin-top: 0; }
 .md-body p:last-child { margin-bottom: 0; }

@@ -16,6 +16,7 @@ import {
   Search,
   Sun,
   Trash2,
+  User,
   WifiOff,
   X,
 } from "lucide-react";
@@ -39,7 +40,7 @@ function ago(ts: number): string {
 }
 
 export function Sidebar() {
-  const { email, roles } = useKromaSession();
+  const { email, roles, user } = useKromaSession();
   const { signOut } = useClerk();
   const router = useRouter();
   const {
@@ -367,18 +368,27 @@ export function Sidebar() {
           )}
         </div>
         <div className="surface flex flex-col items-center rounded-xl px-3 py-3.5 text-center">
-          <UserButton
-            appearance={{
-              elements: {
-                avatarBox: {
-                  width: "2.25rem",
-                  height: "2.25rem",
-                  borderRadius: "50%",
-                  boxShadow: "0 0 0 3px rgba(109, 92, 255, 0.35)",
+          {user ? (
+            <UserButton
+              appearance={{
+                elements: {
+                  avatarBox: {
+                    width: "2.25rem",
+                    height: "2.25rem",
+                    borderRadius: "50%",
+                    boxShadow: "0 0 0 3px rgba(109, 92, 255, 0.35)",
+                  },
                 },
-              },
-            }}
-          />
+              }}
+            />
+          ) : (
+            <span
+              className="avatar-ring flex size-9 items-center justify-center rounded-full bg-kroma-500/15 text-kroma-500 dark:text-kroma-300"
+              aria-hidden
+            >
+              <User className="size-4" />
+            </span>
+          )}
           <p
             className="mt-2 w-full truncate text-[13px] font-medium"
             title={email ?? ""}

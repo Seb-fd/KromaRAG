@@ -4,7 +4,7 @@ import { Suspense, lazy, useEffect } from "react";
 import { FileText } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { useStore, type Role } from "@/lib/store";
-import { clearDevBypass, rolesFromUser } from "@/lib/kroma-token";
+import { clearDevBypass, devBypassActive, getDevBypassIdentity, rolesFromUser } from "@/lib/kroma-token";
 import { Logo } from "./Logo";
 import { Sidebar } from "./Sidebar";
 import { Chat } from "./Chat";
@@ -24,11 +24,22 @@ export function AppShell() {
   const clerkRoles = rolesFromUser(user);
   const jwtRole = clerkRoles[0] as Role | undefined;
   useEffect(() => {
+    // No Clerk session: never stomp the store role with the ["viewer"]
+    // default — a dev bypass carries its own role (otherwise leave local).
+    if (!user) {
+      if (devBypassActive()) {
+        const devRole = getDevBypassIdentity().role as Role;
+        if (devRole !== role && ["viewer", "editor", "admin"].includes(devRole)) {
+          setRole(devRole);
+        }
+      }
+      return;
+    }
     if (jwtRole && jwtRole !== role && ["viewer", "editor", "admin"].includes(jwtRole)) {
       setRole(jwtRole);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jwtRole]);
+  }, [jwtRole, user]);
 
   // A real Clerk session takes over: drop any stale dev-bypass flag/cookie
   // so dev tokens can never shadow (or 401 against) the real session.
@@ -77,16 +88,21 @@ export function AppShell() {
       <div className={`z-30 shrink-0 ${sidebarOpen ? "fixed inset-y-0 left-0 md:static" : "hidden"}`}>
         <Sidebar />
       </div>
-      <main className="min-w-0 flex-1 p-2 sm:p-3" aria-label="Main panel">
-        <div className="mx-auto flex h-full max-w-4xl flex-col" hidden={mainView !== "chat"}>
+      <main className="min-w-0 flex-1 p-2 sm:p-4" aria-label="Main panel">
+        <div className="mx-auto flex h-full max-w-5xl flex-col" hidden={mainView !== "chat"}>
           <Chat />
         </div>
         {mainView === "docs" && (
-          <div className="slim-scroll mx-auto h-full max-w-2xl overflow-y-auto pb-8">
-            <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold tracking-tight">
-              <FileText className="size-4 text-kroma-500" aria-hidden />
-              Documents
-            </h2>
+          <div className="slim-scroll mx-auto h-full max-w-3xl overflow-y-auto px-1 pb-8">
+            <div className="mb-4 pt-2">
+              <h2 className="font-display flex items-center gap-2 text-lg font-semibold tracking-tight">
+                <FileText className="size-5 text-kroma-500" aria-hidden />
+                Documents
+              </h2>
+              <p className="mt-0.5 text-xs ink-soft">
+                RBAC-filtered — you see only what your roles allow
+              </p>
+            </div>
             <Documents />
           </div>
         )}
