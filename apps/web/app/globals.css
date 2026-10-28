@@ -10,6 +10,7 @@
   --color-kroma-600: #5747e3;
   --color-kroma-700: #4a3fd1;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "Cascadia Code", Consolas, monospace;
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -69,6 +70,44 @@ body {
   color: var(--ink);
   font-feature-settings: "cv11", "ss01";
   transition: background 0.25s ease, color 0.25s ease;
+}
+
+/* Ambient gradient mesh — dark-first identity, lavender wash in light mode.
+   Fixed, pointer-transparent, sits behind all content. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(42rem 26rem at 12% -6%, rgba(109, 92, 255, 0.16), transparent 60%),
+    radial-gradient(36rem 24rem at 88% 4%, rgba(143, 125, 255, 0.12), transparent 60%),
+    radial-gradient(48rem 30rem at 50% 115%, rgba(109, 92, 255, 0.08), transparent 60%);
+}
+:root body::before {
+  background:
+    radial-gradient(42rem 26rem at 12% -6%, rgba(109, 92, 255, 0.12), transparent 60%),
+    radial-gradient(36rem 24rem at 88% 4%, rgba(87, 71, 227, 0.08), transparent 60%),
+    radial-gradient(48rem 30rem at 50% 115%, rgba(109, 92, 255, 0.06), transparent 60%);
+}
+
+/* Brand utilities */
+.font-display { font-family: var(--font-display); }
+.kroma-gradient-text {
+  background: linear-gradient(100deg, var(--accent), #b3a6ff 55%, var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.kroma-gradient-btn {
+  background: linear-gradient(135deg, #7c6bff 0%, var(--primary) 55%, #4a3fd1 100%);
+  color: #fff;
+  box-shadow: 0 6px 24px rgba(109, 92, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.kroma-gradient-btn:hover { filter: brightness(1.07); }
+.kroma-gradient-ring {
+  box-shadow: 0 0 0 3px rgba(109, 92, 255, 0.25), 0 8px 30px rgba(109, 92, 255, 0.35);
 }
 
 /* Focus + motion + numeric alignment */
