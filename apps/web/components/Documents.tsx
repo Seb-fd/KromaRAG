@@ -96,6 +96,7 @@ export function Documents() {
   const [qDraft, setQDraft] = useState("");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<Set<string>>(new Set());
+  const [confirmPurgeId, setConfirmPurgeId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(true);
   const pollingRef = useRef<Set<string>>(new Set());
@@ -351,7 +352,13 @@ export function Documents() {
   async function handlePurge(d: DocumentDetail) {
     const jwt = await getKromaToken();
     if (!jwt) { toast("Sign in first", "error"); return; }
-    if (!window.confirm(`Purge “${d.title}” irreversibly? Chunks + shares are deleted (CASCADE).`)) return;
+    setConfirmPurgeId(d.id);
+  }
+
+  async function confirmPurge(d: DocumentDetail) {
+    const jwt = await getKromaToken();
+    if (!jwt) { toast("Sign in first", "error"); return; }
+    setConfirmPurgeId(null);
     markBusy(d.id, true);
     try {
       await purgeDocument(jwt, d.id);
@@ -507,12 +514,25 @@ export function Documents() {
                     </Badge>
                   )}
                   {purgable ? (
-                    <Button variant="ghost" size="xs" onClick={() => handlePurge(d)} disabled={isBusy || inFlight}
-                      title={inFlight ? "Purge blocked while indexing (409)" : "Hard-purge (irreversible CASCADE)"}
-                      className="hover:bg-red-500/10 hover:text-red-500">
-                      <Trash2 aria-hidden />
-                      Purge
-                    </Button>
+                    confirmPurgeId === d.id ? (
+                      <span className="flex items-center gap-1 rounded-lg border border-red-500/50 bg-red-500/10 px-1.5 py-0.5 text-xs" role="alertdialog" aria-label={`Confirm purge of ${d.title}`}>
+                        <span className="ink-soft">Purge “{d.title.slice(0, 24)}” forever?</span>
+                        <Button variant="ghost" size="xs" onClick={() => confirmPurge(d)} disabled={isBusy}
+                          className="hover:bg-red-500/20 hover:text-red-500 font-semibold">
+                          Yes, purge
+                        </Button>
+                        <Button variant="ghost" size="xs" onClick={() => setConfirmPurgeId(null)}>
+                          Keep
+                        </Button>
+                      </span>
+                    ) : (
+                      <Button variant="ghost" size="xs" onClick={() => handlePurge(d)} disabled={isBusy || inFlight}
+                        title={inFlight ? "Purge blocked while indexing (409)" : "Hard-purge (irreversible CASCADE)"}
+                        className="hover:bg-red-500/10 hover:text-red-500">
+                        <Trash2 aria-hidden />
+                        Purge
+                      </Button>
+                    )
                   ) : (
                     manageable === false && (
                       <Badge variant="muted" title="Purge needs owner or admin">
