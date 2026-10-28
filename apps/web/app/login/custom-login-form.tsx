@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { useAuth, useSignIn } from "@clerk/nextjs";
+import { Button } from "@/components/ui/button";
 
 /**
  * Google-only KromaRAG sign-in (Clerk Client API — no <SignIn/>).
@@ -103,23 +105,26 @@ export function CustomLoginForm() {
         </p>
       )}
 
-      <button
+      <Button
         type="button"
+        variant="secondary"
         onClick={handleOAuth}
         disabled={busyOAuth || signIn == null}
-        className="surface flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-50"
+        className="w-full py-2.5"
       >
         {busyOAuth ? (
           <>
-            <span className="spinner" aria-hidden />
+            <Loader2 className="animate-spin" aria-hidden />
             Redirecting to Google…
           </>
         ) : authLoaded && isSignedIn ? (
-          "Go to app →"
+          <>
+            Go to app <ArrowRight aria-hidden />
+          </>
         ) : (
           "Continue with Google"
         )}
-      </button>
+      </Button>
       <p className="text-[11px] ink-faint text-center">
         Google accounts start as viewer — an admin can upgrade you later.
       </p>

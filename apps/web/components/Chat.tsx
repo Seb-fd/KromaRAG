@@ -1,6 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowUp,
+  FileText,
+  Loader2,
+  PanelLeft,
+  RotateCw,
+  Send,
+  Sparkles,
+  Square,
+  WifiOff,
+} from "lucide-react";
 import { clerkTemplateMissing, getKromaToken, useKromaSession } from "@/lib/kroma-token";
 import { streamQuery } from "@/lib/api-client";
 import {
@@ -11,6 +22,9 @@ import {
 } from "@/lib/store";
 import { MessageBody } from "./Message";
 import { Logo } from "./Logo";
+import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import { Skeleton } from "./ui/skeleton";
 
 type Phase = "idle" | "searching" | "reranking" | "synthesizing" | "error";
 const PHASE_LABEL: Record<Exclude<Phase, "idle" | "error">, string> = {
@@ -201,7 +215,7 @@ export function Chat() {
             : (HINTS[err.code] ?? err.message.slice(0, 200));
         toast(hint, "error");
         updateMessage(echoId, assistantId, {
-          content: acc ? `${acc}\n\n⚠️ ${hint}` : `⚠️ ${hint}`,
+          content: acc ? `${acc}\n\nError: ${hint}` : `Error: ${hint}`,
         });
         abortRef.current = null;
       },
@@ -225,33 +239,37 @@ export function Chat() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
-      <div className="glass z-10 flex items-center gap-2 rounded-xl px-3 py-2">
+      <div className="glass z-10 flex items-center gap-2 rounded-xl px-2 py-2">
         {!sidebarOpen && (
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => setSidebarOpen(true)}
-            className="rounded-lg px-2 py-1 text-lg ink-soft hover:opacity-70"
+            aria-label="Open sidebar"
             title="Open sidebar"
           >
-            ☰
-          </button>
+            <PanelLeft />
+          </Button>
         )}
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold">
             {active?.title ?? "KromaRAG"}
           </h2>
-          <p className="text-[11px] ink-faint">
+          <p className="flex items-center gap-1 text-[11px] ink-faint">
             RBAC-filtered hybrid retrieval · SSE streaming
-            {active?.pending ? " · local draft" : ""}
+            {active?.pending && (
+              <Badge variant="muted" className="ml-1">local draft</Badge>
+            )}
           </p>
         </div>
-        <span
-          className="ml-auto hidden rounded-full border px-2 py-0.5 font-mono text-[11px] ink-soft sm:inline"
-          style={{ borderColor: "var(--border)" }}
+        <Badge
+          variant="default"
+          className="ml-auto hidden font-mono sm:inline-flex"
           title={lastFallback ? "Primary model was limited; this answer came from the Groq fallback" : `Answering model: ${lastModel}`}
         >
-          {lastModel}
-          {lastFallback ? " · groq-fallback" : ""}
-        </span>
+          <Sparkles />
+          <span className="tnum">{lastModel}{lastFallback ? " · groq-fallback" : ""}</span>
+        </Badge>
       </div>
 
       {/* Messages */}
@@ -263,15 +281,18 @@ export function Chat() {
           <p className="text-sm ink-faint">Loading session…</p>
         )}
         {active?.messagesLoading && messages.length > 0 && (
-          <p className="text-center text-xs ink-faint">Loading history…</p>
+          <p className="flex items-center justify-center gap-1.5 text-center text-xs ink-faint" role="status">
+            <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            Loading history…
+          </p>
         )}
         {active?.messagesLoading && messages.length === 0 && isSignedIn && (
           <div className="anim-fade-up mx-auto max-w-[92%] space-y-4 py-4 sm:max-w-[85%]" aria-label="Loading messages">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="flex animate-pulse" style={{ justifyContent: i % 2 ? "flex-end" : "flex-start" }}>
-                <div className="w-3/4 space-y-2 rounded-2xl px-4 py-3" style={{ background: "var(--surface-2)" }}>
-                  <div className="h-3 w-11/12 rounded" style={{ background: "var(--border)" }} />
-                  <div className="h-3 w-2/3 rounded" style={{ background: "var(--border)" }} />
+              <div key={i} className="flex" style={{ justifyContent: i % 2 ? "flex-end" : "flex-start" }}>
+                <div className="w-3/4 space-y-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+                  <Skeleton className="h-3 w-11/12" />
+                  <Skeleton className="h-3 w-2/3" />
                 </div>
               </div>
             ))}
@@ -279,14 +300,19 @@ export function Chat() {
         )}
         {active?.hasMore && (
           <div className="text-center">
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={handleLoadMore}
               disabled={active.messagesLoading}
-              className="rounded-lg border px-3 py-1.5 text-xs font-semibold ink-soft transition-opacity hover:opacity-70 disabled:opacity-40"
-              style={{ borderColor: "var(--border)" }}
             >
-              {active.messagesLoading ? "Loading…" : "↑ Load older messages"}
-            </button>
+              {active.messagesLoading ? (
+                <Loader2 className="animate-spin" aria-hidden />
+              ) : (
+                <ArrowUp aria-hidden />
+              )}
+              {active.messagesLoading ? "Loading…" : "Load older messages"}
+            </Button>
           </div>
         )}
         {messages.length === 0 &&
@@ -347,25 +373,29 @@ export function Chat() {
                   {/* Trusted source chips: render ONLY from SSE `source` metadata (m.chunks), never by parsing LLM text. */}
                   {m.chunks && m.chunks.length > 0 && (
                     <div
-                      className="mt-2 flex flex-wrap gap-1.5 border-t pt-2"
-                      style={{ borderColor: "var(--border)" }}
+                      className="mt-2 flex flex-wrap gap-1.5 border-t border-[var(--border)] pt-2"
                     >
                       {[...new Map(m.chunks.map((c) => [c.chunk_id, c])).values()].slice(0, 6).map((c) => (
-                        <button
+                        <Badge
                           key={c.chunk_id}
-                          onClick={() => openInspector(c)}
-                          className="rounded-md px-1.5 py-0.5 text-[11px] ink-soft transition-colors hover:text-current"
-                          style={{ background: "var(--surface-2)" }}
-                          title={`${c.title} · score ${c.score.toFixed(2)}`}
+                          variant="primary"
+                          className="cursor-pointer transition-colors hover:bg-kroma-500/25"
                         >
-                          <span aria-hidden>📄</span> Source: {c.title} [{c.ord}
-                          ]
-                        </button>
+                          <button
+                            onClick={() => openInspector(c)}
+                            aria-label={`Open source ${c.title}, chunk ${c.ord}`}
+                            title={`${c.title} · score ${c.score.toFixed(2)}`}
+                            className="flex items-center gap-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded"
+                          >
+                            <FileText aria-hidden />
+                            Source: {c.title} [{c.ord}]
+                          </button>
+                        </Badge>
                       ))}
                     </div>
                   )}
                   {(m.usage || m.model) && (
-                    <p className="mt-1.5 font-mono text-[10.5px] ink-faint">
+                    <p className="tnum mt-1.5 font-mono text-[11px] ink-faint">
                       {m.model}
                       {m.usage
                         ? ` · ↑${m.usage.prompt_tokens} ↓${m.usage.completion_tokens}`
@@ -383,18 +413,21 @@ export function Chat() {
           </div>
         ))}
         {streaming && (
-          <div className="flex items-center gap-2 text-xs ink-soft">
-            <span className="spinner" />
+          <div className="flex items-center gap-2 text-xs ink-soft" role="status">
+            <Loader2 className="size-3.5 animate-spin text-kroma-500" aria-hidden />
             <span>{PHASE_LABEL[phase as keyof typeof PHASE_LABEL]}</span>
           </div>
         )}
         {phase === "error" && failedQuery && (
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => send(failedQuery)}
-            className="rounded-lg border border-kroma-500/50 px-3 py-1.5 text-xs font-semibold text-kroma-600 dark:text-kroma-300"
+            className="border-kroma-500/50 text-kroma-600 dark:text-kroma-300"
           >
-            ↻ Retry last query
-          </button>
+            <RotateCw />
+            Retry last query
+          </Button>
         )}
       </div>
 
@@ -404,7 +437,8 @@ export function Chat() {
         style={{ boxShadow: "var(--shadow)" }}
       >
         {offline && (
-          <p className="mb-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-[11px] text-red-400" role="alert">
+          <p className="mb-1.5 flex items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-400" role="alert">
+            <WifiOff className="size-3.5 shrink-0" aria-hidden />
             API offline — answers unavailable. Check connection/adblocker, then retry.
           </p>
         )}
@@ -428,25 +462,28 @@ export function Chat() {
               }
             }}
             placeholder="Ask KromaRAG… (Enter to send, Shift+Enter for newline)"
-            className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-[var(--ink-faint)]"
+            className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-[var(--ink-faint)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-lg"
           />
           {streaming ? (
-            <button
+            <Button
               onClick={() => abortRef.current?.abort()}
+              aria-label="Stop generating"
               title="Stop generating"
-              className="rounded-xl bg-red-500/90 px-4 py-2 text-sm font-semibold text-white"
+              className="bg-red-500/90 hover:bg-red-500 hover:opacity-100 text-white"
             >
-              ■ Stop
-            </button>
+              <Square aria-hidden />
+              Stop
+            </Button>
           ) : (
-            <button
+            <Button
               onClick={() => send()}
               disabled={!input.trim() || offline}
+              aria-label={offline ? "API offline" : "Send (Enter)"}
               title={offline ? "API offline" : "Send (Enter)"}
-              className="rounded-xl bg-kroma-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
             >
-              Send ↑
-            </button>
+              <Send aria-hidden />
+              Send
+            </Button>
           )}
         </div>
       </div>
