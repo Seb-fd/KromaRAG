@@ -301,6 +301,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     void syncThreads();
   }, [isSignedIn, syncThreads]);
 
+  // Attempted boot fetches (per thread id): one shot each — a failed fetch
+  // stays failed until the user acts, never a retry loop.
+  const bootFetchedRef = useRef<Set<string>>(new Set());
+
+
   const selectConversation = useCallback(async (id: string, jwtOverride?: string) => {
     setActiveId(id);
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, messagesLoading: true } : c)));
@@ -383,6 +388,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setConversations((prev) => prev.map((c) => (c.id === convId ? { ...c, messagesLoading: false } : c)));
     }
   }, [selectConversation]);
+
+  // Boot fill: after reload the restored active thread has metadata but no
+  // messages (nothing fetches it until the user clicks). Fetch its first page
+  // automatically — but only when it holds nothing, so a live/optimistic
+  // thread is never clobbered, and only once per thread id.
+  useEffect(() => {
+    if (!booted.current || !isSignedIn || !activeId) return;
+    if (bootFetchedRef.current.has(activeId)) return;
+    const known = convsRef.current.find((c) => c.id === activeId);
+    if (!known || known.pending || !isServerThreadId(activeId)) return;
+    if (known.messagesLoading || known.messages.length > 0) return;
+    if (!known.hasMore && !((known.messageCount ?? 0) > 0)) return;
+    bootFetchedRef.current.add(activeId);
+    void selectConversation(activeId);
+  }, [isSignedIn, activeId, conversations, selectConversation]);
 
   const renameThread = useCallback(async (id: string, title: string, jwtOverride?: string) => {
     const clean = title.trim().slice(0, 120);
