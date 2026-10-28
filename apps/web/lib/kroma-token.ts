@@ -219,22 +219,30 @@ export function rolesFromUser(user: { publicMetadata?: unknown } | null | undefi
   return kept.length > 0 ? kept : ["viewer"];
 }
 
-/** Hook replacing next-auth useSession() at call sites. */
+/** Hook replacing next-auth useSession() at call sites.
+ *
+ * Dev-bypass aware: a browser with no Clerk session but an active dev flag
+ * counts as signed in (local dev only). Without this the whole shell —
+ * empty state, skeletons, boot fill, role display — treats a dev session
+ * as signed-out and paints a blank main panel.
+ */
 export function useKromaSession() {
   const { isSignedIn, isLoaded } = useAuth();
   const { user } = useUser();
   const roles = rolesFromUser(user);
+  const devActive = !user && devBypassActive();
+  const devIdentity = devActive ? getDevBypassIdentity() : null;
   const getToken = useCallback(
     async () => getKromaToken(),
     [],
   );
   return {
     isLoaded,
-    isSignedIn: isSignedIn ?? false,
+    isSignedIn: (isSignedIn ?? false) || devActive,
     user,
-    email: user?.primaryEmailAddress?.emailAddress ?? null,
-    roles,
-    role: roles[0] ?? ("viewer" as KromaRole),
+    email: user?.primaryEmailAddress?.emailAddress ?? devIdentity?.email ?? null,
+    roles: user ? roles : devIdentity ? [devIdentity.role] : (["viewer"] as KromaRole[]),
+    role: (user ? roles[0] : devIdentity?.role) ?? ("viewer" as KromaRole),
     getToken,
   };
 }

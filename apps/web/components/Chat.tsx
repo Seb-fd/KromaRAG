@@ -5,6 +5,7 @@ import {
   ArrowUp,
   FileText,
   Loader2,
+  MessageSquare,
   PanelLeft,
   RotateCw,
   Send,
@@ -67,6 +68,8 @@ export function Chat() {
     openInspector,
     setSidebarOpen,
     sidebarOpen,
+    mainView,
+    setMainView,
     apiOnline,
   } = useStore();
   const [input, setInput] = useState("");
@@ -244,22 +247,43 @@ export function Chat() {
       <div className="glass relative z-10 flex items-center gap-2 rounded-xl px-2 py-2">
         <span className="pointer-events-none absolute inset-x-4 -bottom-px h-px" style={{ background: "linear-gradient(90deg, transparent, rgba(109,92,255,0.5), transparent)" }} aria-hidden />
         {!sidebarOpen && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open sidebar"
-            title="Open sidebar"
-          >
-            <PanelLeft />
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open sidebar"
+              title="Open sidebar"
+            >
+              <PanelLeft />
+            </Button>
+            <div className="flex rounded-lg border border-[var(--border)] p-0.5 md:hidden" role="tablist" aria-label="Main view">
+              {(["chat", "docs"] as const).map((t) => (
+                <Button
+                  key={t}
+                  variant="ghost"
+                  size="xs"
+                  role="tab"
+                  aria-selected={mainView === t}
+                  onClick={() => setMainView(t)}
+                  className={t === mainView ? "bg-kroma-500/15 text-current" : ""}
+                >
+                  {t === "chat" ? <MessageSquare aria-hidden /> : <FileText aria-hidden />}
+                  <span className="capitalize">{t === "chat" ? "Chats" : "Docs"}</span>
+                </Button>
+              ))}
+            </div>
+          </>
         )}
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold">
+          <h2 className="font-display truncate text-[15px] font-semibold tracking-tight">
             {active?.title ?? "KromaRAG"}
           </h2>
-          <p className="flex items-center gap-1 text-[11px] ink-faint">
+          <p className="tnum flex items-center gap-1 text-[11px] ink-faint">
             RBAC-filtered hybrid retrieval · SSE streaming
+            {(active?.messageCount ?? messages.length) > 0 && (
+              <span>· {active?.messageCount ?? messages.length} msgs</span>
+            )}
             {active?.pending && (
               <Badge variant="muted" className="ml-1">local draft</Badge>
             )}
@@ -321,7 +345,7 @@ export function Chat() {
         {messages.length === 0 &&
           isSignedIn &&
           !active?.messagesLoading && (
-            <div className="anim-fade-up mx-auto max-w-lg pt-10 text-center">
+            <div className="anim-fade-up mx-auto max-w-lg pt-14 text-center">
               <Logo size={52} className="avatar-ring mx-auto mb-4 rounded-full" />
               <h3 className="font-display text-xl font-semibold tracking-tight">
                 Ask across your <span className="kroma-gradient-text">accessible docs</span>
