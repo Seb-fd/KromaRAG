@@ -7,7 +7,7 @@
     "apps/web"
   ],
   "devDependencies": {
-    "next": "16.4.0"
+    "next": "16.4.3"
   },
   "scripts": {
     "audit:web": "node scripts/audit-web.js",

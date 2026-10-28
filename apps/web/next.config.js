@@ -49,6 +49,8 @@ const nextConfig = {
   reactStrictMode: true,
   typedRoutes: false,
   poweredByHeader: false,
+  // Records the agent-driven security upgrade (see upgrade handoff prompt).
+  experimental: { agentUpgrade: "security" },
   // Standalone output keeps the app portable (Vercel ignores it safely; required only if you add a Docker fallback).
   output: "standalone",
   async headers() {
