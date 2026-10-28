@@ -7,7 +7,6 @@ import { clearDevBypass } from "@/lib/kroma-token";
 import { Logo } from "./Logo";
 import { useStore } from "@/lib/store";
 import { getKromaToken, useKromaSession } from "@/lib/kroma-token";
-import { Documents } from "./Documents";
 
 function ago(ts: number): string {
   const m = Math.floor((Date.now() - ts) / 60000);
@@ -39,10 +38,17 @@ export function Sidebar() {
     apiVersion,
     retryApiPing,
     setSidebarOpen,
+    mainView,
+    setMainView,
   } = useStore();
-  const [tab, setTab] = useState<"chats" | "docs">("chats");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
+
+  /** Tabs switch the main panel; the sidebar always lists conversations. */
+  function switchView(v: "chat" | "docs") {
+    setMainView(v);
+    if (typeof window !== "undefined" && window.innerWidth < 768) setSidebarOpen(false);
+  }
 
   async function authedJwt(): Promise<string | undefined> {
     return getKromaToken();
@@ -99,29 +105,28 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs: switch the main panel (sidebar always lists conversations) */}
       <div
         className="flex gap-1 border-b px-3 py-2"
         style={{ borderColor: "var(--border)" }}
       >
-        {(["chats", "docs"] as const).map((t) => (
+        {(["chat", "docs"] as const).map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold capitalize transition-all ${tab === t ? "bg-kroma-500/15 text-current" : "ink-soft hover:opacity-80"}`}
+            onClick={() => switchView(t)}
+            className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold capitalize transition-all ${mainView === t ? "bg-kroma-500/15 text-current" : "ink-soft hover:opacity-80"}`}
           >
-            {t === "chats" ? "💬 Chats" : "📄 Documents"}
+            {t === "chat" ? "💬 Chats" : "📄 Documents"}
           </button>
         ))}
       </div>
 
       {/* Body */}
       <div className="slim-scroll min-h-0 flex-1 overflow-y-auto p-3">
-        {tab === "chats" ? (
           <div className="space-y-1.5">
             <div className="flex gap-1.5">
               <button
-                onClick={newConversation}
+                onClick={() => { newConversation(); setMainView("chat"); }}
                 className="flex-1 rounded-xl bg-kroma-600 px-3 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
               >
                 + New chat
@@ -150,6 +155,7 @@ export function Sidebar() {
               <div
                 key={c.id}
                 onClick={() => {
+                  setMainView("chat");
                   void (async () => selectConversation(c.id, await authedJwt()))();
                 }}
                 className={`group cursor-pointer rounded-xl border px-3 py-2 transition-all ${c.id === activeId ? "border-kroma-500/60 bg-kroma-500/10" : "hover:bg-kroma-500/5"}`}
@@ -215,9 +221,6 @@ export function Sidebar() {
               </div>
             ))}
           </div>
-        ) : (
-          <Documents />
-        )}
       </div>
 
       {/* Access card */}

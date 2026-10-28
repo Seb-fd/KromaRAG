@@ -7,13 +7,14 @@ import { clearDevBypass, rolesFromUser } from "@/lib/kroma-token";
 import { Logo } from "./Logo";
 import { Sidebar } from "./Sidebar";
 import { Chat } from "./Chat";
+import { Documents } from "./Documents";
 import { Inspector } from "./Inspector";
 import { Toasts } from "./Toasts";
 
-/** Enterprise shell: sidebar (history/docs/RBAC) + central chat + source inspector. */
+/** Enterprise shell: sidebar (history/RBAC) + central chat/docs + source inspector. */
 export function AppShell() {
   const { isLoaded, user } = useUser();
-  const { sidebarOpen, setSidebarOpen, role, setRole } = useStore();
+  const { sidebarOpen, setSidebarOpen, role, setRole, mainView } = useStore();
 
   // Keep the UI role indicator in sync with the Clerk JWT that authorizes
   // requests (roles live in publicMetadata.roles, default viewer).
@@ -60,9 +61,15 @@ export function AppShell() {
         <Sidebar />
       </div>
       <main className="min-w-0 flex-1 p-2 sm:p-3">
-        <div className="mx-auto flex h-full max-w-4xl flex-col">
+        <div className="mx-auto flex h-full max-w-4xl flex-col" hidden={mainView !== "chat"}>
           <Chat />
         </div>
+        {mainView === "docs" && (
+          <div className="slim-scroll mx-auto h-full max-w-2xl overflow-y-auto pb-8">
+            <h2 className="mb-3 text-sm font-semibold tracking-tight">📄 Documents</h2>
+            <Documents />
+          </div>
+        )}
       </main>
       <Inspector />
       <Toasts />

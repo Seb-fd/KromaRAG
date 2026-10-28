@@ -92,6 +92,9 @@ type Ctx = {
   retryApiPing: () => void;
   sidebarOpen: boolean;
   setSidebarOpen: (b: boolean) => void;
+  /** Main-panel view: chat thread or document management. Tabs live in the sidebar. */
+  mainView: "chat" | "docs";
+  setMainView: (v: "chat" | "docs") => void;
 };
 
 const StoreCtx = createContext<Ctx | null>(null);
@@ -140,6 +143,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [apiVersion, setApiVersion] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mainView, setMainView] = useState<"chat" | "docs">("chat");
   const booted = useRef(false);
 
   // Clerk template TTL is 60s — never cache the JWT. Every authed call
@@ -533,10 +537,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     retryApiPing: pingApi,
     sidebarOpen,
     setSidebarOpen,
+    mainView,
+    setMainView,
   }), [theme, role, conversations, activeId, threadsLoading, threadsError,
     syncThreads, makeLocalDraft, createThread, selectConversation, loadMoreMessages,
     renameThread, deleteThread, deleteConversationAlias, adoptServerThread,
-    refreshThreadMeta, toasts, inspector, apiOnline, apiVersion, pingApi, sidebarOpen, toast]);
+    refreshThreadMeta, toasts, inspector, apiOnline, apiVersion, pingApi, sidebarOpen, mainView, toast]);
 
   return (
     <StoreCtx.Provider value={value}>
