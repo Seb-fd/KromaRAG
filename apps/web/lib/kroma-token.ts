@@ -22,6 +22,11 @@ export const KROMA_TEMPLATE = "kromarag";
 const DEV_FLAG = "kroma-dev-bypass";
 const DEV_EMAIL = "kroma-dev-email";
 const DEV_ROLE = "kroma-dev-role";
+// Plain (non-HttpOnly) marker cookie so the Next edge gate can let local dev
+// reach `/` without a Clerk session. Dev-only: the API still enforces a valid
+// JWT per request, so this cookie alone grants no data access. Never set in
+// production builds (see /login/dev 404 guard + proxy.ts NODE_ENV check).
+const DEV_COOKIE = "kroma-dev-bypass";
 
 /** True when the last token attempt fell back (custom template 404/error). */
 let _templateMissing = false;
@@ -85,6 +90,8 @@ export function setDevBypass(email: string, role: KromaRole): void {
     window.localStorage.setItem(DEV_FLAG, "1");
     window.localStorage.setItem(DEV_EMAIL, email);
     window.localStorage.setItem(DEV_ROLE, role);
+    // Edge-gate marker (proxy.ts honors it in non-prod only).
+    document.cookie = `${DEV_COOKIE}=1; Path=/; SameSite=Lax`;
   } catch {
     /* ignore */
   }
@@ -95,6 +102,7 @@ export function clearDevBypass(): void {
     window.localStorage.removeItem(DEV_FLAG);
     window.localStorage.removeItem(DEV_EMAIL);
     window.localStorage.removeItem(DEV_ROLE);
+    document.cookie = `${DEV_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
   } catch {
     /* ignore */
   }
@@ -117,7 +125,21 @@ async function devBypassToken(): Promise<string | undefined> {
   }
 }
 
+/** True when a real Clerk session exists in this browser (mirrors useAuth). */
+function hasClerkSession(): boolean {
+  try {
+    const w = window as unknown as { Clerk?: { session?: unknown } };
+    return !!w?.Clerk?.session;
+  } catch {
+    return false;
+  }
+}
+
 /** Resolve a fresh API JWT per request (Clerk template, 60s TTL — never cache).
+ *
+ * Precedence: a real Clerk session ALWAYS wins. The dev bypass is strictly a
+ * fallback for browsers with no Clerk session — it must never hijack a signed-in
+ * user (a stale dev flag once caused "Session expired" on valid sessions).
  *
  * Unconditional fallback: templated token first (`kromarag`), then the bare
  * default session token. The fallback keeps the frontend from crashing with
@@ -127,9 +149,16 @@ async function devBypassToken(): Promise<string | undefined> {
  */
 export async function getKromaToken(): Promise<string | undefined> {
   if (typeof window === "undefined") return undefined;
+  const clerkToken = await resolveClerkToken();
+  if (clerkToken) return clerkToken;
   if (process.env.NODE_ENV !== "production" && devBypassActive()) {
     return devBypassToken();
   }
+  return undefined;
+}
+
+/** Clerk half of getKromaToken: bridge (useAuth) first, then window.Clerk. */
+async function resolveClerkToken(): Promise<string | undefined> {
   try {
     if (_bridgeGetToken) {
       try {
@@ -141,7 +170,9 @@ export async function getKromaToken(): Promise<string | undefined> {
       } catch {
         /* templated request failed (e.g. 404) — fall through to default */
       }
-      warnTemplateFallback();
+      // Only blame the template when a session actually exists — a signed-out
+      // browser (or a dev-bypass-only flow) has no token to template.
+      if (hasClerkSession()) warnTemplateFallback();
       try {
         const fallback = await _bridgeGetToken();
         if (fallback) return fallback;
@@ -167,7 +198,7 @@ export async function getKromaToken(): Promise<string | undefined> {
     } catch {
       /* templated request failed (e.g. 404) — fall through to default */
     }
-    warnTemplateFallback();
+    if (hasClerkSession()) warnTemplateFallback();
     try {
       const fallback = await getToken();
       return fallback ?? undefined;

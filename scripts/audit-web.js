@@ -1,38 +1,15 @@
 // npm audit has no native ignore-file, so this wrapper encodes known-unfixable
-// dev-only findings and fails on anything new.
-// Allowlisted:
-// - GHSA-vfj7-8cjw-p6xm (braces <=3.0.3, Patched: None) via eslint-config-next
-//   chain (lint-time only).
-// - Vitest 3 dev-only chain (test runner only, never ships — prod audit
-//   --omit=dev is clean, standalone bundle excludes devDeps):
-//   GHSA-82fw-gwwq-j7x9 + GHSA-qxg6-89mg-rqv8 (@vitest/mocker),
-//   GHSA-5gmw-xhrv-c9v3 + GHSA-85c8-ppgw-ccpr (tinypool worker pool).
-//   Re-check on every vitest bump; drop when upstream ships a fix on the
-//   installed major. NOTE 2026-10-28: @vitest/mocker's fix exists only in
-//   vitest 5 (major bump, out of scope) — GHSA-qxg6-89mg-rqv8 stays
-//   allowlisted until the vitest 5 migration.
+// dev-only findings and fails on anything new. Currently no allowlisted
+// advisories — raw `npm audit` is clean (2026-10-28: vitest 5 migration fixed
+// the @vitest/mocker + tinypool chain; the braces chain fixed upstream).
+// Re-add here only with a GHSA URL + justification, never silently.
 const { execSync } = require("node:child_process");
 
-const ALLOWED_URLS = new Set([
-  "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
-  "https://github.com/advisories/GHSA-82fw-gwwq-j7x9",
-  "https://github.com/advisories/GHSA-qxg6-89mg-rqv8",
-  "https://github.com/advisories/GHSA-5gmw-xhrv-c9v3",
-  "https://github.com/advisories/GHSA-85c8-ppgw-ccpr",
-]);
+const ALLOWED_URLS = new Set([]);
 // Transitive parents have `via: ["micromatch"]` string refs without their own
 // URL, so allow the whole chain only when every advisory URL in the report
 // is allowlisted.
-const ALLOWED_CHAIN = new Set([
-  "braces",
-  "micromatch",
-  "fast-glob",
-  "@next/eslint-plugin-next",
-  "eslint-config-next",
-  "@vitest/mocker",
-  "tinypool",
-  "vitest",
-]);
+const ALLOWED_CHAIN = new Set([]);
 
 function runAudit(args) {
   try {
@@ -75,7 +52,9 @@ const blocking = names.filter((name) => {
 
 if (blocking.length === 0) {
   console.log(
-    `audit-web: OK (${names.length} finding(s), all allowlisted GHSA-vfj7-8cjw-p6xm). Prod audit (--omit=dev) is clean.`,
+    names.length === 0
+      ? "audit-web: OK (0 findings). Prod audit (--omit=dev) is clean."
+      : `audit-web: OK (${names.length} finding(s), all allowlisted). Prod audit (--omit=dev) is clean.`,
   );
   process.exit(0);
 }
@@ -85,5 +64,5 @@ for (const name of blocking) {
   const v = vulns[name];
   console.error(`- ${name} [${v.severity}] via=${JSON.stringify(v.via?.map((x) => (typeof x === "string" ? x : x.url)))}`);
 }
-console.error("If upstream shipped braces>3.0.3, remove GHSA-vfj7-8cjw-p6xm from ALLOWED_URLS in scripts/audit-web.js.");
+console.error("If this is a dev-only chain with no upstream fix, add its GHSA URL(s) to ALLOWED_URLS in scripts/audit-web.js with justification — never silently.");
 process.exit(1);

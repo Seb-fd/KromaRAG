@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import { clerkTemplateMissing, getKromaToken, useKromaSession } from "@/lib/kroma-token";
 import { streamQuery } from "@/lib/api-client";
 import {
@@ -11,6 +10,7 @@ import {
   type SourceChunk,
 } from "@/lib/store";
 import { MessageBody } from "./Message";
+import { Logo } from "./Logo";
 
 type Phase = "idle" | "searching" | "reranking" | "synthesizing" | "error";
 const PHASE_LABEL: Record<Exclude<Phase, "idle" | "error">, string> = {
@@ -107,11 +107,17 @@ export function Chat() {
     if (taRef.current) taRef.current.style.height = "auto";
 
     let acc = "";
-    const ctl = new AbortController();
-    abortRef.current = ctl;
-    await streamQuery({
+    // One honest retry on 401: a fresh login's session can still be
+    // propagating when the first request fires. Reuses the same optimistic
+    // bubbles so a transient failure leaves no duplicate error trail.
+    let authRetried = false;
+    let activeJwt = jwt;
+    const runStream = async (token: string) => {
+      const ctl = new AbortController();
+      abortRef.current = ctl;
+      return streamQuery({
       query: text,
-      jwt,
+      jwt: token,
       top_k: 6,
       conv_id: convToSend,
       signal: ctl.signal,
@@ -150,11 +156,11 @@ export function Chat() {
         abortRef.current = null;
         // Background revalidation: server auto-title (§4.3) + list ordering (FR-04).
         if (serverId) {
-          void refreshThreadMeta(serverId, jwt).catch(() => {});
-          void syncThreads(jwt).catch(() => {});
+          void refreshThreadMeta(serverId, activeJwt).catch(() => {});
+          void syncThreads(activeJwt).catch(() => {});
         }
       },
-      onError: (err) => {
+      onError: async (err) => {
         if (err.code === "LLM_FALLBACK") {
           // Informational only — the stream continues and onDone toasts the
           // final "Answered via Groq fallback" notice. Toasting here too
@@ -164,7 +170,23 @@ export function Chat() {
         if (err.code === "NOT_FOUND") {
           // Thread deleted elsewhere (leak-safe 404, FR-08): refresh the list so
           // the stale shell disappears; user can start a new chat.
-          void syncThreads(jwt).catch(() => {});
+          void syncThreads(activeJwt).catch(() => {});
+        }
+        if (err.code === "UNAUTHENTICATED" && !authRetried && !clerkTemplateMissing()) {
+          // A fresh login's session can still be propagating when the first
+          // request fires — re-mint once and resend on the same bubbles.
+          authRetried = true;
+          toast("Couldn't verify your session — retrying…", "info");
+          updateMessage(echoId, assistantId, { content: "" });
+          acc = "";
+          setPhase("searching");
+          const fresh = await getKromaToken();
+          if (fresh) {
+            activeJwt = fresh;
+            await runStream(fresh);
+            return;
+          }
+          // No fresh token — fall through to the final error below.
         }
         setPhase("error");
         setFailedQuery(text);
@@ -179,6 +201,8 @@ export function Chat() {
         abortRef.current = null;
       },
     });
+    };
+    await runStream(jwt);
   }
 
   const lastModel =
@@ -248,15 +272,7 @@ export function Chat() {
           isSignedIn &&
           !active?.messagesLoading && (
             <div className="anim-fade-up mx-auto max-w-lg pt-10 text-center">
-              <Image
-                alt="KromaRAG Logo"
-                className="mx-auto mb-4 rounded-xl"
-                height={48}
-                priority
-                unoptimized
-                src="/logo.webp"
-                width={48}
-              />
+              <Logo size={48} className="mx-auto mb-4 rounded-xl" />
               <h3 className="text-lg font-semibold tracking-tight">
                 Ask across your accessible docs
               </h3>

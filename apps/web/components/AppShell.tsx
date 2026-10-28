@@ -3,17 +3,12 @@
 import { useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useStore, type Role } from "@/lib/store";
-import { rolesFromUser } from "@/lib/kroma-token";
-import { isRole } from "@/lib/roles";
-import { setInitialRole } from "@/app/login/actions";
+import { clearDevBypass, rolesFromUser } from "@/lib/kroma-token";
+import { Logo } from "./Logo";
 import { Sidebar } from "./Sidebar";
 import { Chat } from "./Chat";
 import { Inspector } from "./Inspector";
 import { Toasts } from "./Toasts";
-
-// Must match the stash key in app/login/custom-login-form.tsx (kept as a
-// local const to avoid pulling the whole form into the home bundle).
-const PENDING_ROLE_KEY = "kroma-pending-role";
 
 /** Enterprise shell: sidebar (history/docs/RBAC) + central chat + source inspector. */
 export function AppShell() {
@@ -31,41 +26,30 @@ export function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jwtRole]);
 
-  // Lazy OAuth role sync (proven social-app pattern: post-auth, non-blocking).
-  // The login form stashes the viewer|editor choice as `kroma-pending-role`
-  // before leaving for Google; Clerk lands back on `/` via
-  // <AuthenticateWithRedirectCallback/>. Apply it here best-effort — never
-  // blocks render or navigation, never overwrites (server action is a no-op
-  // when roles already exist). Absent/invalid stash → viewer default.
+  // A real Clerk session takes over: drop any stale dev-bypass flag/cookie
+  // so dev tokens can never shadow (or 401 against) the real session.
   useEffect(() => {
-    if (!isLoaded || !user) return;
-    let pending: string | null = null;
-    try {
-      pending = window.localStorage.getItem(PENDING_ROLE_KEY);
-    } catch {
-      pending = null;
-    }
-    if (!pending) return;
-    try {
-      window.localStorage.removeItem(PENDING_ROLE_KEY);
-    } catch {
-      /* stash is best-effort */
-    }
-    if (!isRole(pending) || pending === "admin") return;
-    (async () => {
-      try {
-        await setInitialRole(pending);
-      } catch {
-        /* role stays as assigned — non-fatal, UI defaults to viewer */
-      }
-    })();
-  }, [isLoaded, user]);
+    if (user) clearDevBypass();
+  }, [user]);
 
   // Mobile: sidebar starts closed
   useEffect(() => {
     if (window.innerWidth < 768) setSidebarOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Session still hydrating (fresh login lands here via proxy.ts) — show a
+  // skeleton instead of flashing an empty/signed-out shell.
+  if (!isLoaded) {
+    return (
+      <div className="flex h-screen items-center justify-center overflow-hidden">
+        <div className="anim-fade-up flex flex-col items-center gap-3">
+          <Logo size={48} />
+          <p className="text-xs ink-soft">Loading your workspace…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">
