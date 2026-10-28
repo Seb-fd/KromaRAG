@@ -163,7 +163,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration, not derived state
     setTheme(load("kromarag.theme", "dark"));
     setRoleState(load("kromarag.role", "viewer"));
-    const convs = load<Conversation[]>("kromarag.convs.v1", []);
+    const convs = load<Conversation[]>("kromarag.convs.v2", []);
     const normalized = (Array.isArray(convs) ? convs : []).map((c) => ({
       ...c,
       messages: Array.isArray(c.messages) ? c.messages : [],
@@ -184,8 +184,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (booted.current) {
-      localStorage.setItem("kromarag.convs.v1", JSON.stringify(conversations.slice(0, 50)));
+      localStorage.setItem("kromarag.convs.v2", JSON.stringify(conversations.slice(0, 50)));
       localStorage.setItem("kromarag.active", JSON.stringify(activeId));
+      // Drop the pre-history-fix cache: v1 entries can hold fossil
+      // answer-before-question orderings (server tiebreak fixed since).
+      localStorage.removeItem("kromarag.convs.v1");
     }
   }, [conversations, activeId]);
 
