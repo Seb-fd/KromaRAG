@@ -43,6 +43,11 @@ export function Sidebar() {
   } = useStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
+  const [chatQuery, setChatQuery] = useState("");
+
+  const visibleConversations = chatQuery.trim()
+    ? conversations.filter((c) => c.title.toLowerCase().includes(chatQuery.trim().toLowerCase()))
+    : conversations;
 
   /** Tabs switch the main panel; the sidebar always lists conversations. */
   function switchView(v: "chat" | "docs") {
@@ -146,12 +151,46 @@ export function Sidebar() {
             {threadsError && (
               <p className="px-1 pt-1 text-[11px] ink-faint">{threadsError}</p>
             )}
+            <div className="flex gap-1.5">
+              <input
+                value={chatQuery}
+                onChange={(e) => setChatQuery(e.target.value)}
+                placeholder="Search chats…"
+                aria-label="Search conversations"
+                className="surface min-w-0 flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none placeholder:text-[var(--ink-faint)] focus:border-kroma-500"
+              />
+              {chatQuery && (
+                <button
+                  onClick={() => setChatQuery("")}
+                  className="rounded-lg border px-2 text-xs ink-soft transition-opacity hover:opacity-70"
+                  style={{ borderColor: "var(--border)" }}
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {threadsLoading && conversations.length === 0 && (
+              <div className="space-y-1.5" aria-label="Loading conversations">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="animate-pulse rounded-xl border px-3 py-2" style={{ borderColor: "var(--border)" }}>
+                    <div className="h-3 w-3/4 rounded" style={{ background: "var(--surface-2)" }} />
+                    <div className="mt-1.5 h-2 w-1/3 rounded" style={{ background: "var(--surface-2)" }} />
+                  </div>
+                ))}
+              </div>
+            )}
             {conversations.length === 0 && !threadsLoading && (
               <p className="px-1 pt-2 text-xs ink-faint">
-                No conversations yet.
+                No conversations yet — start one with + New chat.
               </p>
             )}
-            {conversations.map((c) => (
+            {chatQuery.trim() && visibleConversations.length === 0 && conversations.length > 0 && (
+              <p className="px-1 pt-2 text-xs ink-faint">
+                No chats match “{chatQuery.trim()}”.
+              </p>
+            )}
+            {visibleConversations.map((c) => (
               <div
                 key={c.id}
                 onClick={() => {
@@ -188,7 +227,8 @@ export function Sidebar() {
                     )}
                   </p>
                 )}
-                <p className="mt-0.5 flex items-center justify-between text-[10.5px] ink-faint">
+                <p className="mt-0.5 flex items-center justify-between text-[10.5px] ink-faint"
+                  title={new Date(c.createdAt).toLocaleString()}>
                   <span>
                     {c.messageCount ?? c.messages.length} msgs ·{" "}
                     {ago(c.createdAt)}
