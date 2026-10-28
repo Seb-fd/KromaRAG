@@ -10,9 +10,16 @@
   --color-kroma-600: #5747e3;
   --color-kroma-700: #4a3fd1;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "Cascadia Code", Consolas, monospace;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 }
 
-/* ── KromaRAG design tokens (light default, .dark override) ── */
+/* ── KromaRAG semantic tokens (light default, .dark override) ──
+   Components must use these (or Tailwind kroma-*) — never raw hex.
+   --border-strong exists so hover states don't need inline styles. */
 :root {
   --bg: #f4f4f7;
   --bg-soft: #ececf1;
@@ -20,11 +27,15 @@
   --surface-solid: #ffffff;
   --surface-2: rgba(255, 255, 255, 0.55);
   --border: rgba(24, 24, 40, 0.1);
+  --border-strong: rgba(24, 24, 40, 0.22);
   --ink: #17171f;
-  --ink-soft: #55555f;
-  --ink-faint: #8b8b96;
+  --ink-soft: #4b4b56;
+  --ink-faint: #6f6f7a;
   --accent: #6d5cff;
   --accent-ink: #ffffff;
+  --primary: #5747e3;
+  --primary-ink: #ffffff;
+  --ring: #6d5cff;
   --user-bubble: #5747e3;
   --code-bg: #1c1c28;
   --shadow: 0 8px 30px rgba(30, 27, 75, 0.08);
@@ -37,11 +48,15 @@
   --surface-solid: #14141d;
   --surface-2: rgba(30, 30, 44, 0.6);
   --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.22);
   --ink: #f2f2f7;
   --ink-soft: #b9b9c7;
-  --ink-faint: #71717f;
+  --ink-faint: #8e8e9c;
   --accent: #8f7dff;
   --accent-ink: #0d0d16;
+  --primary: #6d5cff;
+  --primary-ink: #ffffff;
+  --ring: #8f7dff;
   --user-bubble: #4a3fd1;
   --code-bg: #12121b;
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
@@ -54,6 +69,19 @@ body {
   color: var(--ink);
   font-feature-settings: "cv11", "ss01";
   transition: background 0.25s ease, color 0.25s ease;
+}
+
+/* Focus + motion + numeric alignment */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.tnum { font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade-up, .anim-drawer, .anim-toast, .cursor-blink, .spinner, .animate-pulse {
+    animation: none !important;
+  }
+  body { transition: none; }
 }
 
 /* Surfaces */

@@ -4,6 +4,7 @@ import { Children, isValidElement, memo, useMemo, useState, type ReactNode } fro
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { highlight } from "sugar-high";
+import { Check, Copy, FileText } from "lucide-react";
 import type { SourceChunk } from "@/lib/store";
 import { safeHref } from "@/lib/safe-url";
 import {
@@ -39,8 +40,8 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
     <div className="codeblock group my-2 overflow-hidden rounded-lg border" style={{ borderColor: "var(--border)", background: "var(--code-bg)" }}>
       <div className="flex items-center justify-between px-3 py-1.5 text-[11px]" style={{ borderBottom: "1px solid var(--border)", color: "var(--ink-faint)" }}>
         <span className="font-mono uppercase tracking-wide">{lang}</span>
-        <button onClick={copy} className="rounded px-1.5 py-0.5 transition-colors hover:text-white" title="Copy code">
-          {copied ? "Copied ✓" : "Copy"}
+        <button onClick={copy} aria-label={copied ? "Code copied" : "Copy code"} title="Copy code" className="rounded p-1 transition-colors hover:text-white outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
+          {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
         </button>
       </div>
       <pre className="slim-scroll overflow-x-auto p-3 text-[12.5px] leading-relaxed text-slate-200">
@@ -61,10 +62,9 @@ function CiteBadge({ title, ord, chunk, onOpen, compact }: {
     return (
       <span
         title={`Source not in current results: ${title} [${ord}]`}
-        className="mx-0.5 inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-px text-[0.75em] font-medium opacity-60"
-        style={{ borderColor: "var(--border)" }}
+        className="mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-[var(--border)] px-1.5 py-px text-[0.75em] font-medium opacity-70"
       >
-        <span aria-hidden>📄</span> {title} [{ord}]
+        <FileText className="size-3" aria-hidden /> {title} [{ord}]
       </span>
     );
   }
@@ -73,10 +73,10 @@ function CiteBadge({ title, ord, chunk, onOpen, compact }: {
       onClick={() => onOpen(chunk)}
       title={`Open source: ${chunk.title} (score ${chunk.score.toFixed(2)})`}
       aria-label={`Open source ${chunk.title}, chunk ${ord}`}
-      className="mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-kroma-500/40 bg-kroma-500/10 px-1.5 py-px text-[0.75em] font-semibold text-kroma-600 transition-all hover:bg-kroma-500/25 dark:text-kroma-300"
+      className="mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-kroma-500/40 bg-kroma-500/10 px-1.5 py-px text-[0.75em] font-semibold text-kroma-600 transition-all hover:bg-kroma-500/25 dark:text-kroma-300 outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
     >
-      <span aria-hidden>📄</span> {compact ? `[${ord}]` : <>{title} [{ord}]</>}
-      {!compact && <span className="font-normal opacity-70">{chunk.score.toFixed(2)}</span>}
+      <FileText className="size-3" aria-hidden /> {compact ? `[${ord}]` : <>{title} [{ord}]</>}
+      {!compact && <span className="tnum font-normal opacity-70">{chunk.score.toFixed(2)}</span>}
     </button>
   );
 }

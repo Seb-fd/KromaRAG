@@ -1,6 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Archive,
+  CheckCircle2,
+  Loader2,
+  Lock,
+  RefreshCw,
+  Trash2,
+  UploadCloud,
+  XCircle,
+} from "lucide-react";
 import { getKromaToken, useKromaSession } from "@/lib/kroma-token";
 import {
   ApiError,
@@ -9,6 +19,9 @@ import {
   type DocStatus, type DocumentDetail, type UploadJob,
 } from "@/lib/api-client";
 import { useStore } from "@/lib/store";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Badge } from "./ui/badge";
 
 const TERMINAL_STATUSES: DocStatus[] = ["indexed", "failed", "archived"];
 const STATUS_FILTERS: (DocStatus | "all")[] = ["all", "indexed", "indexing", "pending", "failed", "archived"];
@@ -54,24 +67,17 @@ function friendlyDocError(e: unknown): string {
   return (e as Error).message?.slice(0, 140) ?? "Upload failed";
 }
 
-const BADGE_STYLES: Record<DocStatus, string> = {
-  indexed: "bg-emerald-500/15 text-emerald-500",
-  indexing: "bg-sky-500/15 text-sky-500",
-  pending: "bg-amber-500/15 text-amber-500",
-  failed: "bg-red-500/15 text-red-500",
-  archived: "bg-zinc-500/15 text-zinc-400",
-};
-
 /** Local UI-only job id (module scope: keeps render pure per react-hooks/purity). */
 const newLocalId = () => Math.random().toString(36).slice(2, 9);
 
 function StatusBadge({ status }: { status: DocStatus }) {
   const busy = status === "pending" || status === "indexing";
+  const variant = status === "indexed" ? "success" : status === "failed" ? "danger" : status === "archived" ? "muted" : "warning";
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${BADGE_STYLES[status] ?? BADGE_STYLES.archived}`}>
-      {busy && <span className="spinner" />}
+    <Badge variant={variant} className="shrink-0 font-mono uppercase">
+      {busy && <Loader2 className="animate-spin" aria-hidden />}
       {status}
-    </span>
+    </Badge>
   );
 }
 
@@ -380,20 +386,26 @@ export function Documents() {
         title={canUpload ? "Drop .txt / .md / .pdf files or click to browse" : "Editors+ only"}>
         <input ref={fileRef} type="file" multiple accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf"
           className="hidden" onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = ""; }} />
-        <p className="text-lg">📥</p>
-        <p className="font-medium">{canUpload ? "Drop files or browse" : `🔒 Editors only (you: ${role})`}</p>
+        <p className="flex justify-center text-[var(--ink-faint)]"><UploadCloud className="size-5" aria-hidden /></p>
+        <p className="flex items-center justify-center gap-1 font-medium">
+          {canUpload ? "Drop files or browse" : (
+            <>
+              <Lock className="size-3.5" aria-hidden />
+              Editors only (you: {role})
+            </>
+          )}
+        </p>
         <p className="ink-faint mt-0.5">.txt · .md · .pdf · URL below · ≤{(MAX_UPLOAD_BYTES / 1_048_576).toFixed(0)} MB</p>
       </div>
 
       {/* URL ingestion */}
       <form onSubmit={submitUrl} className="space-y-1.5">
-        <input value={urlTitle} onChange={(e) => setUrlTitle(e.target.value)} placeholder="Title (optional)"
-          className="surface w-full rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-kroma-500" />
+        <Input value={urlTitle} onChange={(e) => setUrlTitle(e.target.value)} placeholder="Title (optional)" aria-label="Document title (optional)" />
         <div className="flex gap-1.5">
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…"
-            className="surface min-w-0 flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-kroma-500" />
-          <button type="submit" disabled={!canUpload || !url.trim()}
-            className="rounded-lg bg-kroma-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-40">Add</button>
+          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" aria-label="Document URL" className="min-w-0 flex-1" />
+          <Button type="submit" size="sm" disabled={!canUpload || !url.trim()}>
+            Add
+          </Button>
         </div>
       </form>
 
@@ -411,12 +423,12 @@ export function Documents() {
       {jobs.length > 0 && (
         <ul className="space-y-1.5">
           {jobs.map((j) => (
-            <li key={j.id} className="surface flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px]">
-              {(j.state === "reading" || j.state === "uploading" || j.state === "indexing") && <span className="spinner" />}
-              {j.state === "done" && <span className="text-emerald-500">✓</span>}
-              {j.state === "error" && <span className="text-red-500">✕</span>}
+            <li key={j.id} className="surface flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs">
+              {(j.state === "reading" || j.state === "uploading" || j.state === "indexing") && <Loader2 className="size-3.5 animate-spin text-kroma-500" aria-hidden />}
+              {j.state === "done" && <CheckCircle2 className="size-3.5 text-emerald-500" aria-hidden />}
+              {j.state === "error" && <XCircle className="size-3.5 text-red-500" aria-hidden />}
               <span className="min-w-0 flex-1 truncate font-medium">{j.label}</span>
-              <span className="ink-faint shrink-0">{j.detail}</span>
+              <span className="tnum shrink-0 ink-faint">{j.detail}</span>
             </li>
           ))}
         </ul>
@@ -434,12 +446,12 @@ export function Documents() {
         <form
           onSubmit={(e) => { e.preventDefault(); setQ(qDraft); }}
           className="flex gap-1.5">
-          <input value={qDraft} onChange={(e) => setQDraft(e.target.value)} placeholder="Filter by title…"
-            className="surface min-w-0 flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-kroma-500" />
-          <button type="submit" className="rounded-lg border px-2.5 py-1.5 text-xs" style={{ borderColor: "var(--border)" }}>Search</button>
+          <Input value={qDraft} onChange={(e) => setQDraft(e.target.value)} placeholder="Filter by title…" aria-label="Filter documents by title" className="min-w-0 flex-1" />
+          <Button type="submit" variant="outline" size="sm">Search</Button>
           {q && (
-            <button type="button" onClick={() => { setQ(""); setQDraft(""); }}
-              className="rounded-lg border px-2 py-1.5 text-xs opacity-70" style={{ borderColor: "var(--border)" }}>Clear</button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => { setQ(""); setQDraft(""); }}>
+              Clear
+            </Button>
           )}
         </form>
       </div>
@@ -478,32 +490,37 @@ export function Documents() {
                 <div className="mt-1.5 flex items-center gap-1">
                   {manageable ? (
                     <>
-                      <button onClick={() => handleReindex(d)} disabled={isBusy || inFlight}
-                        className="rounded px-1.5 py-0.5 text-[11px] hover:bg-sky-500/10 disabled:opacity-40"
+                      <Button variant="ghost" size="xs" onClick={() => handleReindex(d)} disabled={isBusy || inFlight}
                         title={inFlight ? "Already indexing — wait for terminal state" : "Re-index (async job, bumps version)"}>
-                        {isBusy ? "…" : "🔁 Reindex"}
-                      </button>
-                      <button onClick={() => handleArchive(d)} disabled={isBusy}
-                        className="rounded px-1.5 py-0.5 text-[11px] hover:bg-amber-500/10 disabled:opacity-40"
+                        {isBusy ? <Loader2 className="animate-spin" aria-hidden /> : <RefreshCw aria-hidden />}
+                        Reindex
+                      </Button>
+                      <Button variant="ghost" size="xs" onClick={() => handleArchive(d)} disabled={isBusy}
                         title="Soft-delete (Archive — recoverable via reindex)">
-                        {isBusy ? "…" : "📦 Archive"}
-                      </button>
+                        {isBusy ? <Loader2 className="animate-spin" aria-hidden /> : <Archive aria-hidden />}
+                        Archive
+                      </Button>
                     </>
                   ) : (
-                    <span className="text-[10px] ink-faint" title="Reindex/archive needs owner+editor or admin">🔒</span>
+                    <Badge variant="muted" title="Reindex/archive needs owner+editor or admin">
+                      <Lock aria-hidden /> restricted
+                    </Badge>
                   )}
                   {purgable ? (
-                    <button onClick={() => handlePurge(d)} disabled={isBusy || inFlight}
-                      className="rounded px-1.5 py-0.5 text-[11px] text-red-500 hover:bg-red-500/10 disabled:opacity-40"
-                      title={inFlight ? "Purge blocked while indexing (409)" : "Hard-purge (irreversible CASCADE)"}>
-                      🗑 Purge
-                    </button>
+                    <Button variant="ghost" size="xs" onClick={() => handlePurge(d)} disabled={isBusy || inFlight}
+                      title={inFlight ? "Purge blocked while indexing (409)" : "Hard-purge (irreversible CASCADE)"}
+                      className="hover:bg-red-500/10 hover:text-red-500">
+                      <Trash2 aria-hidden />
+                      Purge
+                    </Button>
                   ) : (
                     manageable === false && (
-                      <span className="text-[10px] ink-faint" title="Purge needs owner or admin">🔒</span>
+                      <Badge variant="muted" title="Purge needs owner or admin">
+                        <Lock aria-hidden /> owner only
+                      </Badge>
                     )
                   )}
-                  {inFlight && <span className="ink-faint ml-auto text-[10px]">polling…</span>}
+                  {inFlight && <span className="ml-auto flex items-center gap-1 text-xs ink-faint"><Loader2 className="size-3 animate-spin" aria-hidden />polling…</span>}
                 </div>
               </li>
             );

@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, lazy, useEffect } from "react";
+import { FileText } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { useStore, type Role } from "@/lib/store";
 import { clearDevBypass, rolesFromUser } from "@/lib/kroma-token";
@@ -68,7 +69,10 @@ export function AppShell() {
         </div>
         {mainView === "docs" && (
           <div className="slim-scroll mx-auto h-full max-w-2xl overflow-y-auto pb-8">
-            <h2 className="mb-3 text-sm font-semibold tracking-tight">📄 Documents</h2>
+            <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold tracking-tight">
+              <FileText className="size-4 text-kroma-500" aria-hidden />
+              Documents
+            </h2>
             <Documents />
           </div>
         )}
