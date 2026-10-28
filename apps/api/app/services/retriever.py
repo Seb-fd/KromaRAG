@@ -1,5 +1,8 @@
 """Hybrid search per specs/03 §4 + specs/07 §4.4: 0.7*cosine + 0.3*ts_rank, RBAC in WHERE (never post-filter).
 
+Admin bypass mirrors the documents endpoints (VISIBILITY_FRAG): owner, admin
+role, or exact role grant — the panel and the retriever agree on "accessible".
+
 Only status='indexed' rows are retrieval-eligible (pending/indexing/failed/archived excluded).
 
 $1 query_embedding VECTOR(768) | $2 plainto_tsquery string | $3 user_sub
@@ -14,7 +17,7 @@ from uuid import UUID
 HYBRID_SQL = """SELECT c.id AS chunk_id, c.doc_id, d.title, c.content, c.ord,
   (0.7 * (1 - (c.embedding <=> $1::vector)) + 0.3 * coalesce(ts_rank(c.content_tsv, plainto_tsquery('english', $2)), 0)) AS score
 FROM kroma_chunks c JOIN kroma_documents d ON d.id = c.doc_id
-WHERE (d.owner_sub = $3 OR EXISTS (
+WHERE (d.owner_sub = $3 OR 'admin' = ANY($4) OR EXISTS (
   SELECT 1 FROM kroma_document_roles r WHERE r.doc_id = d.id AND r.role = ANY($4)
 ))
 AND d.status = 'indexed'
@@ -140,7 +143,7 @@ async def get_doc_metadata(doc_id: str, principal, db=None) -> dict | None:
         raise ValueError("db pool/connection is required")
     row = await db.fetchrow(
         "SELECT d.id, d.title, d.mime, d.status, d.owner_sub, d.version FROM kroma_documents d "
-        "WHERE d.id=$1 AND (d.owner_sub=$2 OR EXISTS ("
+        "WHERE d.id=$1 AND (d.owner_sub=$2 OR 'admin' = ANY($3) OR EXISTS ("
         "SELECT 1 FROM kroma_document_roles r WHERE r.doc_id=d.id AND r.role = ANY($3)))",
         doc_id, principal.sub, list(getattr(principal, "roles", [])),
     )

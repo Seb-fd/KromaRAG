@@ -12,7 +12,8 @@ def test_sql_has_rbac_and_weights():
     sql, args = build_hybrid_params(VEC, "hello world", "u1", ["viewer"], top_k=6)
     assert sql is HYBRID_SQL
     for needle in ["owner_sub = $3", "kroma_document_roles", "ANY($4)", "0.7", "0.3",
-                   "ts_rank", "ORDER BY c.embedding", "status = 'indexed'", "LIMIT $5"]:
+                   "ts_rank", "ORDER BY c.embedding", "status = 'indexed'", "LIMIT $5",
+                   "'admin' = ANY($4)"]:
         assert needle in sql, needle
     assert args[2] == "u1" and args[3] == ["viewer"] and args[4] == 18  # top_k*3
 
@@ -79,6 +80,24 @@ async def test_hybrid_search_wires_rbac_and_probes():
 
 
 @pytest.mark.asyncio
+async def test_hybrid_search_admin_bypass_in_sql():
+    """Admin (non-owner) sees role-granted docs: bypass mirrors documents endpoints."""
+    rows = [
+        {"chunk_id": "c1", "doc_id": "d1", "title": "Doc", "content": "alpha", "ord": 0, "score": 0.8},
+    ]
+    db = FakeDB(rows)
+    admin = Principal(sub="admin1", email="a@x.com", roles=["admin"])
+
+    async def fake_embed(q: str):
+        return list(VEC)
+
+    out = await hybrid_search("alpha query", admin, top_k=6, db=db, embed_fn=fake_embed)
+    assert "'admin' = ANY($4)" in db.seen_sql[-1]
+    assert db.fetch_args[2] == "admin1" and db.fetch_args[3] == ["admin"]
+    assert [r.chunk_id for r in out] == ["c1"]
+
+
+@pytest.mark.asyncio
 async def test_hybrid_search_empty_query_skips_db():
     db = FakeDB([])
     assert await hybrid_search("   ", P, db=db, embed_fn=lambda q: VEC) == []
@@ -92,4 +111,5 @@ async def test_get_doc_metadata_rbac():
     got = await get_doc_metadata("d1", P, db=db)
     assert got == row
     assert "ANY($3)" in db.seen_sql[-1]  # role filter in SQL
+    assert "'admin' = ANY($3)" in db.seen_sql[-1]  # admin bypass mirrors documents endpoints
     assert await get_doc_metadata("d9", P, db=FakeDB([])) is None  # unauthorized → None (no leak)

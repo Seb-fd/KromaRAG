@@ -16,10 +16,9 @@ import { useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
  * (no <AuthenticateWithRedirectCallback/> — that's the legacy protocol and
  * mixing them traps users on this route).
  *
- * Role assignment deliberately does NOT happen here: the stashed
- * `kroma-pending-role` choice is applied lazily, best-effort by AppShell once
- * the session exists on `/` (mirrors the working social app's post-auth
- * `syncUser()` — never races or blocks session establishment).
+ * New Google users default to viewer (roles live in Clerk publicMetadata,
+ * enforced server-side by FastAPI) — no role assignment happens here or
+ * anywhere client-side.
  */
 function describeFailure(err: unknown, fallback: string): string {
   if (!err) return fallback;

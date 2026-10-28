@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { KROMA_ROLES, type KromaRole } from "@/lib/roles";
 import { setDevBypass } from "@/lib/kroma-token";
+import { Logo } from "@/components/Logo";
 
 /**
  * Local dev-only sign-in bypass.
@@ -45,18 +45,7 @@ export function DevBypassForm() {
       style={{ boxShadow: "var(--shadow)" }}
     >
       <div className="flex items-center gap-3">
-        <Image
-          alt="KromaRAG Logo"
-          className="rounded-xl"
-          height={40}
-          priority
-          unoptimized
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = "none";
-          }}
-          src="/logo.webp"
-          width={40}
-        />
+        <Logo size={40} className="rounded-xl" />
         <div>
           <h1 className="font-semibold tracking-tight text-lg">KromaRAG</h1>
           <p className="text-xs ink-soft">

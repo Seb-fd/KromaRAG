@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { UserButton, useClerk } from "@clerk/nextjs";
+import { clearDevBypass } from "@/lib/kroma-token";
+import { Logo } from "./Logo";
 import { useStore } from "@/lib/store";
 import { getKromaToken, useKromaSession } from "@/lib/kroma-token";
 import { Documents } from "./Documents";
@@ -19,6 +21,7 @@ function ago(ts: number): string {
 export function Sidebar() {
   const { email, roles } = useKromaSession();
   const { signOut } = useClerk();
+  const router = useRouter();
   const {
     theme,
     toggleTheme,
@@ -71,15 +74,7 @@ export function Sidebar() {
         className="flex items-center gap-2.5 border-b px-4 py-3"
         style={{ borderColor: "var(--border)" }}
       >
-        <Image
-          alt="KromaRAG Logo"
-          className="rounded-lg"
-          height={32}
-          priority
-          unoptimized
-          src="/logo.webp"
-          width={32}
-        />
+        <Logo size={32} />
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold tracking-tight">
             KromaRAG
@@ -279,7 +274,21 @@ export function Sidebar() {
           </p>
         </div>
         <button
-          onClick={() => signOut({ redirectUrl: "/login" })}
+          onClick={() => {
+            // Drop the dev marker too — otherwise the edge gate would let the
+            // next visitor straight back in without a Clerk session.
+            clearDevBypass();
+            // signOut may not navigate when there is no Clerk session (e.g.
+            // dev-bypass-only), so force our way back to /login regardless.
+            void (async () => {
+              try {
+                await signOut({ redirectUrl: "/login" });
+              } finally {
+                router.push("/login");
+                router.refresh();
+              }
+            })();
+          }}
           className="w-full rounded-lg border px-2 py-1.5 text-xs ink-soft transition-opacity hover:opacity-70"
           style={{ borderColor: "var(--border)" }}
         >

@@ -1,7 +1,7 @@
-import Image from "next/image";
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { CustomLoginForm } from "../custom-login-form";
+import { Logo } from "@/components/Logo";
 
 /**
  * Custom KromaRAG login route (Clerk Client API — no <SignIn/>).
@@ -45,15 +45,7 @@ export default async function LoginPage({
         style={{ boxShadow: "var(--shadow)" }}
       >
         <div className="flex items-center gap-3">
-          <Image
-            alt="KromaRAG Logo"
-            className="rounded-xl"
-            height={40}
-            priority
-            unoptimized
-            src="/logo.webp"
-            width={40}
-          />
+          <Logo size={40} className="rounded-xl" />
           <div>
             <h1 className="font-semibold tracking-tight text-lg">KromaRAG</h1>
             <p className="text-xs ink-soft">
