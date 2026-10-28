@@ -3,9 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { TriangleAlert } from "lucide-react";
 import { KROMA_ROLES, type KromaRole } from "@/lib/roles";
 import { setDevBypass } from "@/lib/kroma-token";
 import { Logo } from "@/components/Logo";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 /**
  * Local dev-only sign-in bypass.
@@ -41,69 +46,71 @@ export function DevBypassForm() {
   return (
     <form
       onSubmit={submit}
-      className="glass anim-fade-up w-full max-w-sm rounded-2xl p-7 space-y-5"
+      className="glass anim-fade-up w-full max-w-sm space-y-5 rounded-2xl p-7 text-center"
       style={{ boxShadow: "var(--shadow)" }}
     >
-      <div className="flex items-center gap-3">
-        <Logo size={40} className="rounded-xl" />
-        <div>
-          <h1 className="font-semibold tracking-tight text-lg">KromaRAG</h1>
-          <p className="text-xs ink-soft">
-            Knowledge &amp; Role-Based Vector Architecture
-          </p>
-        </div>
+      <div className="flex flex-col items-center gap-2">
+        <Logo size={44} className="kroma-gradient-ring rounded-2xl" />
+        <h1 className="font-display text-lg font-semibold tracking-tight">KromaRAG <Badge variant="warning">dev bypass</Badge></h1>
+        <p className="text-xs ink-soft">
+          Knowledge &amp; Role-Based Vector Architecture
+        </p>
       </div>
-      <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] ink-soft">
-        Local dev bypass only — never available in production builds. For real
-        sign-in use <Link href="/login" className="underline">/login</Link> via
-        Clerk. API calls with this bypass need the backend at
-        JWT_ISSUER=http://localhost:3000 (see apps/api/.env.example); with the
-        Clerk issuer configured, use a real Clerk session instead.
+      <p className="flex items-start gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-left text-xs ink-soft">
+        <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" aria-hidden />
+        <span>
+          Local dev bypass only — never available in production builds. For real
+          sign-in use <Link href="/login" className="underline">/login</Link> via
+          Clerk. API calls with this bypass need the backend at
+          JWT_ISSUER=http://localhost:3000 (see apps/api/.env.example); with the
+          Clerk issuer configured, use a real Clerk session instead.
+        </span>
       </p>
-      <div className="space-y-2">
+      <div className="space-y-2 text-left">
         <label className="text-xs font-medium ink-soft" htmlFor="email">
           Work email
         </label>
-        <input
+        <Input
           id="email"
           type="email"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="surface w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-kroma-500"
           placeholder="admin@kromarag.com"
         />
       </div>
-      <fieldset className="space-y-2">
+      <fieldset className="space-y-2 text-left">
         <legend className="text-xs font-medium ink-soft">
           Access role (stamped into your dev JWT)
         </legend>
         <div className="grid grid-cols-3 gap-2">
           {KROMA_ROLES.map((r) => (
-            <button
+            <Button
               type="button"
               key={r}
+              variant={role === r ? "default" : "outline"}
+              size="sm"
               onClick={() => setRole(r)}
-              className={`rounded-lg border px-2 py-2 text-xs font-semibold capitalize transition-all ${role === r ? "border-kroma-500 bg-kroma-500/15 text-current" : "ink-soft hover:opacity-80"}`}
-              style={role === r ? {} : { borderColor: "var(--border)" }}
+              aria-pressed={role === r}
+              className={cn("capitalize", role === r && "kroma-gradient-btn border-transparent")}
             >
               {r}
-            </button>
+            </Button>
           ))}
         </div>
-        <p className="text-[11px] ink-faint">
+        <p className="text-center text-xs ink-faint">
           FastAPI enforces this server-side on every query. Upload needs
           editor+, delete needs admin.
         </p>
       </fieldset>
-      {error && <p className="text-xs text-red-500">{error}</p>}
-      <button
+      {error && <p role="alert" className="text-xs text-red-500">{error}</p>}
+      <Button
         type="submit"
         disabled={busy}
-        className="w-full rounded-lg bg-kroma-600 px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+        className="kroma-gradient-btn h-11 w-full text-[15px]"
       >
         {busy ? "Signing in…" : `Continue as ${role} (dev)`}
-      </button>
+      </Button>
     </form>
   );
 }

@@ -16,7 +16,6 @@ import {
   Search,
   Sun,
   Trash2,
-  Wifi,
   WifiOff,
   X,
 } from "lucide-react";
@@ -328,26 +327,25 @@ export function Sidebar() {
           </div>
       </div>
 
-      {/* Access card */}
+      {/* Profile block — centered identity, quiet status */}
       <div
-        className="space-y-2 border-t p-3"
-        style={{ borderColor: "var(--border)" }}
+        className="space-y-2.5 border-t border-[var(--border)] p-3"
       >
-        <div className="flex items-center gap-2 text-xs ink-soft">
+        <div className="flex items-center justify-center gap-1.5 text-xs ink-faint" role="status">
           {apiOnline == null ? (
             <>
-              <Loader2 className="size-3.5 animate-spin text-[var(--ink-faint)]" aria-hidden />
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
               Checking API…
             </>
           ) : apiOnline ? (
             <>
-              <Wifi className="size-3.5 text-emerald-500" aria-hidden />
+              <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
               <span className="tnum">
                 API online{apiVersion ? ` · v${apiVersion}` : ""}
               </span>
             </>
           ) : (
-            <span className="flex min-w-0 items-center gap-1.5">
+            <span className="flex min-w-0 items-center justify-center gap-1.5">
               <WifiOff className="size-3.5 shrink-0 text-red-500" aria-hidden />
               <span
                 className="truncate"
@@ -368,30 +366,22 @@ export function Sidebar() {
             </span>
           )}
         </div>
-        <div className="surface rounded-xl p-2.5">
-          <div className="flex items-center gap-2">
+        <div className="surface flex flex-col items-center rounded-xl px-3 py-3.5 text-center">
+          <span className="kroma-gradient-ring rounded-full [&_.cl-avatarBox]:size-9">
             <UserButton />
-            <p
-              className="min-w-0 flex-1 truncate text-xs font-medium"
-              title={email ?? ""}
-            >
-              {email ?? "Signed in"}
-            </p>
-          </div>
-          <p className="mt-1.5 flex items-center gap-1.5 text-xs ink-soft">
-            Role:{" "}
+          </span>
+          <p
+            className="mt-2 w-full truncate text-[13px] font-medium"
+            title={email ?? ""}
+          >
+            {email ?? "Signed in"}
+          </p>
+          <span className="mt-1.5" title={roles.length > 1 ? `All roles: ${roles.join(", ")}` : "Roles live in Clerk publicMetadata and are enforced server-side by FastAPI. Contact an admin to change yours."}>
             <Badge variant="primary" className="capitalize">
+              <Lock aria-hidden />
               {role}
             </Badge>
-            {roles.length > 1 && (
-              <span className="ink-faint"> ({roles.join(", ")})</span>
-            )}
-          </p>
-          <p className="mt-1 flex gap-1 text-[11px] leading-snug ink-faint">
-            <Lock className="mt-0.5 size-3 shrink-0" aria-hidden />
-            Roles are managed in the Clerk dashboard — contact an admin to
-            change yours. FastAPI enforces them server-side.
-          </p>
+          </span>
         </div>
         <Button
           variant="outline"

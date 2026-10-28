@@ -2,9 +2,21 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, CircleAlert, Info, Loader2 } from "lucide-react";
 import { useAuth, useSignIn } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
+
+/** Official "G" mark (multi-color SVG, not an emoji). */
+function GoogleMark() {
+  return (
+    <svg className="size-4" viewBox="0 0 24 24" aria-hidden>
+      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" />
+      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z" />
+      <path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z" />
+      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z" />
+    </svg>
+  );
+}
 
 /**
  * Google-only KromaRAG sign-in (Clerk Client API — no <SignIn/>).
@@ -89,28 +101,19 @@ export function CustomLoginForm() {
   }
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="font-semibold tracking-tight text-base">
-          Sign in to KromaRAG
-        </h2>
-        <p className="text-xs ink-soft mt-0.5">
-          Continue with Google — new accounts start as viewer
-        </p>
-      </div>
-
+    <div className="w-full space-y-4">
       {error && (
-        <p role="alert" className="text-xs text-red-500">
+        <p role="alert" className="mx-auto flex max-w-xs items-start justify-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-500 dark:text-red-400">
+          <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           {error}
         </p>
       )}
 
       <Button
         type="button"
-        variant="secondary"
         onClick={handleOAuth}
         disabled={busyOAuth || signIn == null}
-        className="w-full py-2.5"
+        className="kroma-gradient-btn h-11 w-full text-[15px]"
       >
         {busyOAuth ? (
           <>
@@ -122,11 +125,17 @@ export function CustomLoginForm() {
             Go to app <ArrowRight aria-hidden />
           </>
         ) : (
-          "Continue with Google"
+          <>
+            <span className="flex size-6 items-center justify-center rounded-full bg-white">
+              <GoogleMark />
+            </span>
+            Continue with Google
+          </>
         )}
       </Button>
-      <p className="text-[11px] ink-faint text-center">
-        Google accounts start as viewer — an admin can upgrade you later.
+      <p className="flex items-start justify-center gap-1 text-xs ink-faint">
+        <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+        New accounts start as viewer — an admin can upgrade you later.
       </p>
     </div>
   );

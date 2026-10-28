@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
 
 /**
@@ -226,17 +227,17 @@ function FinalizeOAuth() {
 
   if (failureDetail) {
     return (
-      <div className="space-y-2 text-center">
-        <p className="text-sm font-medium">Google sign-in didn&apos;t finish.</p>
+      <div className="anim-fade-up w-full max-w-sm space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-7 text-center" style={{ boxShadow: "var(--shadow)" }}>
+        <p className="font-display text-base font-semibold tracking-tight">Google sign-in didn&apos;t finish.</p>
         <p className="text-xs ink-soft">
           Your session wasn&apos;t established — try again.
         </p>
-        <p role="alert" className="text-xs text-red-500">
+        <p role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-500 dark:text-red-400">
           {failureDetail}
         </p>
         <Link
           href="/login"
-          className="inline-block rounded-lg bg-kroma-600 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+          className="kroma-gradient-btn inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold"
         >
           Back to login
         </Link>
@@ -244,7 +245,13 @@ function FinalizeOAuth() {
     );
   }
 
-  return null;
+  return (
+    <div className="anim-fade-up flex w-full max-w-sm flex-col items-center rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-7 text-center" style={{ boxShadow: "var(--shadow)" }} role="status">
+      <Loader2 className="size-6 animate-spin text-kroma-500" aria-hidden />
+      <p className="font-display mt-3 text-base font-semibold tracking-tight">Finishing Google sign-in…</p>
+      <p className="mt-1 text-xs ink-soft">Activating your session — you&apos;ll land in the app.</p>
+    </div>
+  );
 }
 
 export default function SSOCallbackPage() {
