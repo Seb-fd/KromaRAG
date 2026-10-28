@@ -9,6 +9,9 @@
   "devDependencies": {
     "next": "16.4.3"
   },
+  "overrides": {
+    "zod": "^4.6.7"
+  },
   "scripts": {
     "audit:web": "node scripts/audit-web.js",
     "audit:web:prod": "npm audit --omit=dev --workspace apps/web",

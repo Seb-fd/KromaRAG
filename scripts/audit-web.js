@@ -5,13 +5,18 @@
 //   chain (lint-time only).
 // - Vitest 3 dev-only chain (test runner only, never ships — prod audit
 //   --omit=dev is clean, standalone bundle excludes devDeps):
-//   GHSA-82fw-gwwq-j7x9 (@vitest/mocker), GHSA-5gmw-xhrv-c9v3 + GHSA-85c8-ppgw-ccpr
-//   (tinypool worker pool). Re-check on every vitest bump; drop when upstream ships a fix.
+//   GHSA-82fw-gwwq-j7x9 + GHSA-qxg6-89mg-rqv8 (@vitest/mocker),
+//   GHSA-5gmw-xhrv-c9v3 + GHSA-85c8-ppgw-ccpr (tinypool worker pool).
+//   Re-check on every vitest bump; drop when upstream ships a fix on the
+//   installed major. NOTE 2026-10-28: @vitest/mocker's fix exists only in
+//   vitest 5 (major bump, out of scope) — GHSA-qxg6-89mg-rqv8 stays
+//   allowlisted until the vitest 5 migration.
 const { execSync } = require("node:child_process");
 
 const ALLOWED_URLS = new Set([
   "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
   "https://github.com/advisories/GHSA-82fw-gwwq-j7x9",
+  "https://github.com/advisories/GHSA-qxg6-89mg-rqv8",
   "https://github.com/advisories/GHSA-5gmw-xhrv-c9v3",
   "https://github.com/advisories/GHSA-85c8-ppgw-ccpr",
 ]);
