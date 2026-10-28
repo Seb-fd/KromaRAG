@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildChunkMap,
+  buildRepeatKeys,
+  citeKey,
   lookupChunk,
   normalizeLegacy,
   sanitizeTitle,
@@ -43,5 +45,18 @@ describe("citations lib", () => {
     const m = buildChunkMap(CHUNKS);
     expect(lookupChunk(m, "Handbook", 0)?.score).toBe(0.9);
     expect(lookupChunk(m, "Missing", 0)).toBeUndefined();
+  });
+
+  it("citeKey is case-insensitive on title", () => {
+    expect(citeKey("Handbook", 0)).toBe(citeKey("handbook", 0));
+    expect(citeKey("Handbook", 0)).not.toBe(citeKey("Handbook", 1));
+  });
+
+  it("buildRepeatKeys flags only multiply-cited keys, skips fences", () => {
+    const repeats = buildRepeatKeys("a [doc:Handbook:0] b [doc:Handbook:0] c [doc:Handbook:1]");
+    expect(repeats.has(citeKey("Handbook", 0))).toBe(true);
+    expect(repeats.has(citeKey("Handbook", 1))).toBe(false);
+    expect(buildRepeatKeys("```\n[doc:Handbook:0]\n[doc:Handbook:0]\n```").size).toBe(0);
+    expect(buildRepeatKeys("no citations here").size).toBe(0);
   });
 });

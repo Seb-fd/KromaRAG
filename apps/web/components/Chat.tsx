@@ -51,6 +51,7 @@ export function Chat() {
     openInspector,
     setSidebarOpen,
     sidebarOpen,
+    apiOnline,
   } = useStore();
   const [input, setInput] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
@@ -71,6 +72,10 @@ export function Chat() {
   async function send(raw?: string) {
     const text = (raw ?? input).trim();
     if (!text || streaming) return;
+    if (apiOnline === false) {
+      toast("API offline — check connection or adblocker, then retry", "error");
+      return;
+    }
     const jwt = await getKromaToken();
     if (!jwt) {
       toast(
@@ -207,6 +212,8 @@ export function Chat() {
 
   const lastModel =
     [...messages].reverse().find((m) => m.model)?.model ?? "gemini-3.6-flash";
+  const lastFallback = [...messages].reverse().find((m) => m.model)?.fallbackUsed ?? false;
+  const offline = apiOnline === false;
 
   async function handleLoadMore() {
     if (!activeId) return;
@@ -240,8 +247,10 @@ export function Chat() {
         <span
           className="ml-auto hidden rounded-full border px-2 py-0.5 font-mono text-[11px] ink-soft sm:inline"
           style={{ borderColor: "var(--border)" }}
+          title={lastFallback ? "Primary model was limited; this answer came from the Groq fallback" : `Answering model: ${lastModel}`}
         >
           {lastModel}
+          {lastFallback ? " · groq-fallback" : ""}
         </span>
       </div>
 
@@ -329,7 +338,7 @@ export function Chat() {
                       className="mt-2 flex flex-wrap gap-1.5 border-t pt-2"
                       style={{ borderColor: "var(--border)" }}
                     >
-                      {m.chunks.slice(0, 6).map((c) => (
+                      {[...new Map(m.chunks.map((c) => [c.chunk_id, c])).values()].slice(0, 6).map((c) => (
                         <button
                           key={c.chunk_id}
                           onClick={() => openInspector(c)}
@@ -382,12 +391,18 @@ export function Chat() {
         className="glass rounded-2xl p-2.5"
         style={{ boxShadow: "var(--shadow)" }}
       >
+        {offline && (
+          <p className="mb-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-[11px] text-red-400" role="alert">
+            API offline — answers unavailable. Check connection/adblocker, then retry.
+          </p>
+        )}
         <div className="flex items-end gap-2">
           <textarea
             ref={taRef}
             rows={1}
             value={input}
-            disabled={streaming}
+            disabled={streaming || offline}
+            aria-label="Ask KromaRAG"
             onChange={(e) => {
               setInput(e.target.value);
               e.target.style.height = "auto";
@@ -414,7 +429,8 @@ export function Chat() {
           ) : (
             <button
               onClick={() => send()}
-              disabled={!input.trim()}
+              disabled={!input.trim() || offline}
+              title={offline ? "API offline" : "Send (Enter)"}
               className="rounded-xl bg-kroma-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               Send ↑

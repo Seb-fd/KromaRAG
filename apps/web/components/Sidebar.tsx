@@ -7,7 +7,6 @@ import { clearDevBypass } from "@/lib/kroma-token";
 import { Logo } from "./Logo";
 import { useStore } from "@/lib/store";
 import { getKromaToken, useKromaSession } from "@/lib/kroma-token";
-import { Documents } from "./Documents";
 
 function ago(ts: number): string {
   const m = Math.floor((Date.now() - ts) / 60000);
@@ -39,10 +38,22 @@ export function Sidebar() {
     apiVersion,
     retryApiPing,
     setSidebarOpen,
+    mainView,
+    setMainView,
   } = useStore();
-  const [tab, setTab] = useState<"chats" | "docs">("chats");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
+  const [chatQuery, setChatQuery] = useState("");
+
+  const visibleConversations = chatQuery.trim()
+    ? conversations.filter((c) => c.title.toLowerCase().includes(chatQuery.trim().toLowerCase()))
+    : conversations;
+
+  /** Tabs switch the main panel; the sidebar always lists conversations. */
+  function switchView(v: "chat" | "docs") {
+    setMainView(v);
+    if (typeof window !== "undefined" && window.innerWidth < 768) setSidebarOpen(false);
+  }
 
   async function authedJwt(): Promise<string | undefined> {
     return getKromaToken();
@@ -68,6 +79,8 @@ export function Sidebar() {
     <div
       className="glass flex h-full min-h-0 w-80 max-w-[85vw] flex-col md:rounded-none"
       style={{ borderRight: "1px solid var(--border)" }}
+      role="complementary"
+      aria-label="Workspace sidebar"
     >
       {/* Brand */}
       <div
@@ -99,29 +112,28 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs: switch the main panel (sidebar always lists conversations) */}
       <div
         className="flex gap-1 border-b px-3 py-2"
         style={{ borderColor: "var(--border)" }}
       >
-        {(["chats", "docs"] as const).map((t) => (
+        {(["chat", "docs"] as const).map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold capitalize transition-all ${tab === t ? "bg-kroma-500/15 text-current" : "ink-soft hover:opacity-80"}`}
+            onClick={() => switchView(t)}
+            className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold capitalize transition-all ${mainView === t ? "bg-kroma-500/15 text-current" : "ink-soft hover:opacity-80"}`}
           >
-            {t === "chats" ? "💬 Chats" : "📄 Documents"}
+            {t === "chat" ? "💬 Chats" : "📄 Documents"}
           </button>
         ))}
       </div>
 
       {/* Body */}
       <div className="slim-scroll min-h-0 flex-1 overflow-y-auto p-3">
-        {tab === "chats" ? (
           <div className="space-y-1.5">
             <div className="flex gap-1.5">
               <button
-                onClick={newConversation}
+                onClick={() => { newConversation(); setMainView("chat"); }}
                 className="flex-1 rounded-xl bg-kroma-600 px-3 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
               >
                 + New chat
@@ -141,15 +153,50 @@ export function Sidebar() {
             {threadsError && (
               <p className="px-1 pt-1 text-[11px] ink-faint">{threadsError}</p>
             )}
+            <div className="flex gap-1.5">
+              <input
+                value={chatQuery}
+                onChange={(e) => setChatQuery(e.target.value)}
+                placeholder="Search chats…"
+                aria-label="Search conversations"
+                className="surface min-w-0 flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none placeholder:text-[var(--ink-faint)] focus:border-kroma-500"
+              />
+              {chatQuery && (
+                <button
+                  onClick={() => setChatQuery("")}
+                  className="rounded-lg border px-2 text-xs ink-soft transition-opacity hover:opacity-70"
+                  style={{ borderColor: "var(--border)" }}
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {threadsLoading && conversations.length === 0 && (
+              <div className="space-y-1.5" aria-label="Loading conversations">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="animate-pulse rounded-xl border px-3 py-2" style={{ borderColor: "var(--border)" }}>
+                    <div className="h-3 w-3/4 rounded" style={{ background: "var(--surface-2)" }} />
+                    <div className="mt-1.5 h-2 w-1/3 rounded" style={{ background: "var(--surface-2)" }} />
+                  </div>
+                ))}
+              </div>
+            )}
             {conversations.length === 0 && !threadsLoading && (
               <p className="px-1 pt-2 text-xs ink-faint">
-                No conversations yet.
+                No conversations yet — start one with + New chat.
               </p>
             )}
-            {conversations.map((c) => (
+            {chatQuery.trim() && visibleConversations.length === 0 && conversations.length > 0 && (
+              <p className="px-1 pt-2 text-xs ink-faint">
+                No chats match “{chatQuery.trim()}”.
+              </p>
+            )}
+            {visibleConversations.map((c) => (
               <div
                 key={c.id}
                 onClick={() => {
+                  setMainView("chat");
                   void (async () => selectConversation(c.id, await authedJwt()))();
                 }}
                 className={`group cursor-pointer rounded-xl border px-3 py-2 transition-all ${c.id === activeId ? "border-kroma-500/60 bg-kroma-500/10" : "hover:bg-kroma-500/5"}`}
@@ -173,7 +220,7 @@ export function Sidebar() {
                     style={{ borderColor: "var(--border)" }}
                   />
                 ) : (
-                  <p className="truncate text-[13px] font-medium">
+                  <p className="truncate text-[13px] font-medium" title={c.title}>
                     {c.title}
                     {c.pending && (
                       <span className="ml-1.5 text-[10px] ink-faint">
@@ -182,7 +229,8 @@ export function Sidebar() {
                     )}
                   </p>
                 )}
-                <p className="mt-0.5 flex items-center justify-between text-[10.5px] ink-faint">
+                <p className="mt-0.5 flex items-center justify-between text-[10.5px] ink-faint"
+                  title={new Date(c.createdAt).toLocaleString()}>
                   <span>
                     {c.messageCount ?? c.messages.length} msgs ·{" "}
                     {ago(c.createdAt)}
@@ -215,9 +263,6 @@ export function Sidebar() {
               </div>
             ))}
           </div>
-        ) : (
-          <Documents />
-        )}
       </div>
 
       {/* Access card */}

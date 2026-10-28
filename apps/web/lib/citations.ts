@@ -143,11 +143,35 @@ export function buildChunkMap<T extends SourceChunkLike>(chunks?: T[]): Map<stri
   for (const c of chunks ?? []) m.set(`${sanitizeTitle(c.title)}::${c.ord}`, c);
   return m;
 }
-
 export function lookupChunk<T extends SourceChunkLike>(
   map: Map<string, T>,
   title: string,
   ord: number
 ): T | undefined {
   return map.get(`${sanitizeTitle(title)}::${ord}`);
+}
+
+/** Canonical dedupe key for one citation (case-insensitive title + ord). */
+export function citeKey(title: string, ord: number): string {
+  return `${sanitizeTitle(title).toLowerCase()}::${Number(ord)}`;
+}
+
+/** Scan normalized markdown for citation order: keys occurring more than once
+ * are returned (first occurrence renders full, repeats render compact).
+ * Pure — safe to memoize, no render-time mutation (StrictMode-safe).
+ */
+export function buildRepeatKeys(input: string): Set<string> {
+  const seen = new Set<string>();
+  const repeats = new Set<string>();
+  for (const part of input.split(FENCE_SPLIT_RE)) {
+    if (!part || part.startsWith("```")) continue;
+    CITATION_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = CITATION_RE.exec(part)) !== null) {
+      const k = citeKey(m[1], Number(m[2]));
+      if (seen.has(k)) repeats.add(k);
+      else seen.add(k);
+    }
+  }
+  return repeats;
 }
