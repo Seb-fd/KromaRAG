@@ -34,6 +34,7 @@ export function Sidebar() {
     threadsError,
     apiOnline,
     apiVersion,
+    retryApiPing,
     setSidebarOpen,
   } = useStore();
   const [tab, setTab] = useState<"chats" | "docs">("chats");
@@ -233,11 +234,28 @@ export function Sidebar() {
           <span
             className={`h-2 w-2 rounded-full ${apiOnline == null ? "bg-gray-400" : apiOnline ? "bg-emerald-500" : "bg-red-500"}`}
           />
-          {apiOnline == null
-            ? "Checking API…"
-            : apiOnline
-              ? `API online${apiVersion ? ` · v${apiVersion}` : ""}`
-              : "API offline — start apps/api"}
+          {apiOnline == null ? (
+            "Checking API…"
+          ) : apiOnline ? (
+            `API online${apiVersion ? ` · v${apiVersion}` : ""}`
+          ) : (
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span
+                className="truncate"
+                title="The API couldn't be reached from this browser. Common causes: no connection, VPN/firewall, or an adblocker blocking the API host. Whitelist the API host or disable the blocker for this site, then retry."
+              >
+                API unreachable — check connection or adblocker
+              </span>
+              <button
+                onClick={retryApiPing}
+                className="shrink-0 rounded px-1.5 py-0.5 text-xs ink-soft transition-opacity hover:opacity-70"
+                style={{ border: "1px solid var(--border)" }}
+                title="Retry API health check"
+              >
+                ↻
+              </button>
+            </span>
+          )}
         </div>
         <div className="surface rounded-xl p-2.5">
           <div className="flex items-center gap-2">

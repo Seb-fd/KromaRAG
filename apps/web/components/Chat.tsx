@@ -27,7 +27,7 @@ const SUGGESTIONS = [
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 const HINTS: Record<string, string> = {
-  API_UNREACHABLE: "API unreachable — start apps/api on :8000",
+  API_UNREACHABLE: "API unreachable — check your connection, adblocker, or VPN",
   UNAUTHENTICATED: "Session expired — please sign in again",
   FORBIDDEN: "Forbidden for your role — switch role or ask an admin",
   RATE_LIMITED: "Rate limited — wait a few seconds and retry",
