@@ -111,7 +111,7 @@ export function Sidebar() {
       >
         <Logo size={32} />
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold tracking-tight">
+          <h1 className="font-display truncate text-[15px] font-semibold tracking-tight">
             KromaRAG
           </h1>
           <p className="truncate text-[11px] ink-faint">
