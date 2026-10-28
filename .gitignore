@@ -29,6 +29,9 @@ venv/
 .env.local
 .env.production
 .env.*.local
+# Debug credentials (never commit)
+debug-credentials.local.md
+*.local.md
 apps/web/.env.local
 apps/api/.env
 

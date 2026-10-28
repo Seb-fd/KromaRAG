@@ -88,6 +88,8 @@ type Ctx = {
   closeInspector: () => void;
   apiOnline: boolean | null;
   apiVersion: string;
+  /** Re-run the API health ping on demand (Retry button). Never throws. */
+  retryApiPing: () => void;
   sidebarOpen: boolean;
   setSidebarOpen: (b: boolean) => void;
 };
@@ -185,25 +187,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // API health ping (client-side; resilient to offline backend)
   // Proxy-aware: relative /health rides next.config.js rewrites() when
-  // NEXT_PUBLIC_USE_PROXY=1 (dev), else direct NEXT_PUBLIC_API_URL fetch.
-  useEffect(() => {
-    let stop = false;
-    const ping = async () => {
-      try {
-        const base = apiBase();
-        const r = await fetch(`${base}/health`, { cache: "no-store", signal: AbortSignal.timeout(5000) });
-        if (!stop) {
-          setApiOnline(r.ok);
-          if (r.ok) setApiVersion((await r.json().catch(() => ({})))?.version ?? "");
-        }
-      } catch {
-        if (!stop) setApiOnline(false);
-      }
-    };
-    ping();
-    const t = setInterval(ping, 30000);
-    return () => { stop = true; clearInterval(t); };
+  // NEXT_PUBLIC_USE_PROXY=1 (dev/prod-proxy), else direct NEXT_PUBLIC_API_URL fetch.
+  // Exposed as retryApiPing so the Sidebar Retry button re-pings on demand.
+  const pingApi = useCallback(async () => {
+    try {
+      const base = apiBase();
+      const r = await fetch(`${base}/health`, { cache: "no-store", signal: AbortSignal.timeout(5000) });
+      setApiOnline(r.ok);
+      if (r.ok) setApiVersion((await r.json().catch(() => ({})))?.version ?? "");
+    } catch {
+      setApiOnline(false);
+    }
   }, []);
+
+  useEffect(() => {
+    // setTimeout keeps the initial ping out of the effect body itself
+    // (react-hooks/set-state-in-effect); the interval callback is exempt.
+    const first = setTimeout(() => { void pingApi(); }, 0);
+    const t = setInterval(() => { void pingApi(); }, 30000);
+    return () => { clearTimeout(first); clearInterval(t); };
+  }, [pingApi]);
 
   const toast = useCallback((text: string, kind: Toast["kind"] = "info") => {
     const id = uid();
@@ -275,7 +278,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             : "Session expired — please sign in again",
         );
       } else if (e instanceof ApiError && e.code === "API_UNREACHABLE") {
-        setThreadsError("API offline — showing cached threads");
+        setThreadsError("API unreachable (check connection or adblocker) — showing cached threads");
       } else {
         setThreadsError(e instanceof Error ? e.message.slice(0, 160) : "Thread sync failed");
       }
@@ -527,12 +530,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     closeInspector: () => setInspector((s) => ({ ...s, open: false })),
     apiOnline,
     apiVersion,
+    retryApiPing: pingApi,
     sidebarOpen,
     setSidebarOpen,
   }), [theme, role, conversations, activeId, threadsLoading, threadsError,
     syncThreads, makeLocalDraft, createThread, selectConversation, loadMoreMessages,
     renameThread, deleteThread, deleteConversationAlias, adoptServerThread,
-    refreshThreadMeta, toasts, inspector, apiOnline, apiVersion, sidebarOpen, toast]);
+    refreshThreadMeta, toasts, inspector, apiOnline, apiVersion, pingApi, sidebarOpen, toast]);
 
   return (
     <StoreCtx.Provider value={value}>
