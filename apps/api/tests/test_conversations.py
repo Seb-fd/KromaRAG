@@ -156,6 +156,15 @@ class FakeConn:
     # -- multi-row reads --
     async def fetch(self, sql: str, *args):
         s = sql
+        # Role tiebreak mirrors the real ORDER BY: within equal created_at
+        # (same-transaction persist_pair), user sorts before assistant in ASC.
+        # Emulate by ASC-sorting (created_at, role rank, id) then reversing
+        # (endpoint reverses the DESC page back to ASC).
+        def _desc(rows):
+            rows.sort(key=lambda m: (m["created_at"],
+                                     {"user": 0, "assistant": 1}.get(m["role"], 2),
+                                     m["id"]))
+            return rows[::-1]
         if "FROM kroma_conversations c WHERE c.user_sub=$1" in s:
             sub, limit, offset = args[0], int(args[1]), int(args[2])
             items = [c for c in self.convs.values() if c["user_sub"] == sub]
@@ -172,7 +181,7 @@ class FakeConn:
                 cid = str(args[0])
                 anchor_created, anchor_id, limit = args[1], str(args[2]), int(args[3])
                 rows = [m for m in self.msgs if m["conv_id"] == cid]
-                rows.sort(key=lambda m: (m["created_at"], m["id"]), reverse=True)
+                rows = _desc(rows)
                 # Anchor = exclusive upper bound in DESC order.
                 out = []
                 for m in rows:
@@ -185,8 +194,7 @@ class FakeConn:
                 return out[:limit]
             cid, limit = str(args[0]), int(args[1])
             rows = [m for m in self.msgs if m["conv_id"] == cid]
-            rows.sort(key=lambda m: (m["created_at"], m["id"]), reverse=True)
-            return [dict(m) for m in rows[:limit]]
+            return [dict(m) for m in _desc(rows)[:limit]]
         return []
 
     async def fetchval(self, sql: str, *args):
@@ -424,6 +432,32 @@ async def test_message_pagination_replays_all(authed_crud):
         foreign_id = authed_crud.msgs[-1]["id"]
         r = await c.get(f"/api/v1/conversations/{tid}/messages?before_id={foreign_id}")
         assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_same_timestamp_pair_orders_user_first(authed_crud):
+    """Regression: persist_pair writes (user, assistant) in one transaction, so
+    both rows share created_at (now() = txn timestamp). The role tiebreak must
+    still return the question before the answer — never answer-first."""
+    from datetime import UTC, datetime
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        tid = (await c.post("/api/v1/conversations", json={})).json()["id"]
+        frozen = datetime.now(UTC)
+        # Simulate the same-transaction write: identical created_at, and push
+        # the assistant row FIRST so a naive (created_at, id) sort would flip.
+        authed_crud.msgs.append({"id": str(uuid.uuid4()), "conv_id": tid, "role": "assistant",
+                                "content": "the answer", "trace_id": None, "created_at": frozen,
+                                "prompt_tokens": 0, "completion_tokens": 0, "model": "", "route": "retrieval"})
+        authed_crud.msgs.append({"id": str(uuid.uuid4()), "conv_id": tid, "role": "user",
+                                "content": "the question", "trace_id": None, "created_at": frozen,
+                                "prompt_tokens": 0, "completion_tokens": 0, "model": "", "route": "retrieval"})
+        # Force id order adversarial: assistant id sorts before user id.
+        authed_crud.msgs[-2]["id"], authed_crud.msgs[-1]["id"] = (
+            "00000000-0000-0000-0000-000000000001", "ffffffff-ffff-ffff-ffff-ffffffffffff")
+        got = (await c.get(f"/api/v1/conversations/{tid}/messages")).json()
+        assert [m["role"] for m in got["items"]] == ["user", "assistant"]
+        assert [m["content"] for m in got["items"]] == ["the question", "the answer"]
 
 
 def test_truncate_history_caps():

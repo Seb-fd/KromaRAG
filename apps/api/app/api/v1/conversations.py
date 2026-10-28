@@ -42,14 +42,26 @@ RENAME_SQL = (
 DELETE_SQL = "DELETE FROM kroma_conversations WHERE id=$1 AND user_sub=$2 RETURNING id"
 OWNER_SQL = "SELECT id FROM kroma_conversations WHERE id=$1 AND user_sub=$2"
 ANCHOR_SQL = "SELECT created_at, id FROM kroma_messages WHERE id=$1 AND conv_id=$2"
+# created_at defaults to now() (transaction timestamp), so the (user, assistant)
+# pair written atomically by persist_pair shares ONE timestamp. Without a role
+# tiebreak, order within the pair falls back to random UUIDv4 → answers render
+# before questions ~50% of the time. The CASE pins user-before-assistant in the
+# final ASC order (DESC page lists assistant first; the endpoint reverses).
+# Note: the (created_at, id) keyset stays tuple-based; a page boundary landing
+# mid-pair can duplicate (never skip) a row — the web client dedupes by id.
+ROLE_TIEBREAK = (
+    "CASE role WHEN 'assistant' THEN 0 WHEN 'user' THEN 1 ELSE 2 END ASC"
+)
 MSGS_SQL = (
     "SELECT id, role, content, trace_id, created_at FROM kroma_messages"
-    " WHERE conv_id=$1 ORDER BY created_at DESC, id DESC LIMIT $2"
+    " WHERE conv_id=$1 ORDER BY created_at DESC,"
+    f" {ROLE_TIEBREAK}, id DESC LIMIT $2"
 )
 MSGS_BEFORE_SQL = (
     "SELECT id, role, content, trace_id, created_at FROM kroma_messages"
     " WHERE conv_id=$1 AND (created_at, id) < ($2, $3)"
-    " ORDER BY created_at DESC, id DESC LIMIT $4"
+    " ORDER BY created_at DESC,"
+    f" {ROLE_TIEBREAK}, id DESC LIMIT $4"
 )
 
 

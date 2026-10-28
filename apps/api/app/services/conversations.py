@@ -149,7 +149,9 @@ async def load_history_rows(conn: Any, conv_id: str, limit: int) -> list[dict]:
     try:
         rows = await conn.fetch(
             "SELECT role, content FROM kroma_messages WHERE conv_id=$1"
-            " ORDER BY created_at DESC, id DESC LIMIT $2",
+            " ORDER BY created_at DESC,"
+            " CASE role WHEN 'assistant' THEN 0 WHEN 'user' THEN 1 ELSE 2 END ASC,"
+            " id DESC LIMIT $2",
             conv_id, limit,
         )
     except Exception:
