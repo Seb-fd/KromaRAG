@@ -341,17 +341,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const loadMoreMessages = useCallback(async (convId: string, jwtOverride?: string) => {
     const known = convsRef.current.find((c) => c.id === convId);
-    if (!known || known.messagesLoading || !known.hasMore || !known.nextBeforeId) return;
+    if (!known || known.messagesLoading || !known.hasMore) return;
     if (known.pending || !isServerThreadId(convId)) return;
     const jwt = jwtOverride ?? (await getKromaToken());
     if (!jwt) return;
-    setConversations((prev) => prev.map((c) => (c.id === convId ? { ...c, messagesLoading: true } : c)));
-    try {
-      const cursor = convsRef.current.find((c) => c.id === convId)?.nextBeforeId ?? known.nextBeforeId;
-      if (!cursor) {
-        setConversations((prev) => prev.map((c) => (c.id === convId ? { ...c, messagesLoading: false, hasMore: false } : c)));
+    const cursor = convsRef.current.find((c) => c.id === convId)?.nextBeforeId ?? known.nextBeforeId;
+    if (!cursor) {
+      // Cursorless but hasMore: this thread was list-synced or restored with
+      // messages missing and never fully opened (or its first fetch failed).
+      // A first-page fetch is the only safe load — but only when we hold no
+      // messages, so a live/optimistic thread is never clobbered. Otherwise
+      // drop the flag so the button stops offering a dead load.
+      if ((convsRef.current.find((c) => c.id === convId)?.messages.length ?? 0) === 0) {
+        await selectConversation(convId, jwt);
         return;
       }
+      setConversations((prev) => prev.map((c) => (c.id === convId ? { ...c, hasMore: false } : c)));
+      return;
+    }
+    setConversations((prev) => prev.map((c) => (c.id === convId ? { ...c, messagesLoading: true } : c)));
+    try {
       const data = await apiGetMessages(jwt, convId, 50, cursor);
       const older = toChatMessages(data.items);
       setConversations((prev) => prev.map((c) => {
@@ -370,7 +379,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Offline: keep what we have.
       setConversations((prev) => prev.map((c) => (c.id === convId ? { ...c, messagesLoading: false } : c)));
     }
-  }, []);
+  }, [selectConversation]);
 
   const renameThread = useCallback(async (id: string, title: string, jwtOverride?: string) => {
     const clean = title.trim().slice(0, 120);
