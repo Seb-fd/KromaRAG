@@ -56,7 +56,9 @@ export function DevBypassForm() {
       <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] ink-soft">
         Local dev bypass only — never available in production builds. For real
         sign-in use <Link href="/login" className="underline">/login</Link> via
-        Clerk.
+        Clerk. API calls with this bypass need the backend at
+        JWT_ISSUER=http://localhost:3000 (see apps/api/.env.example); with the
+        Clerk issuer configured, use a real Clerk session instead.
       </p>
       <div className="space-y-2">
         <label className="text-xs font-medium ink-soft" htmlFor="email">
