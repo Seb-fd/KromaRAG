@@ -265,6 +265,18 @@ export function Chat() {
         {active?.messagesLoading && messages.length > 0 && (
           <p className="text-center text-xs ink-faint">Loading history…</p>
         )}
+        {active?.messagesLoading && messages.length === 0 && isSignedIn && (
+          <div className="anim-fade-up mx-auto max-w-[92%] space-y-4 py-4 sm:max-w-[85%]" aria-label="Loading messages">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex animate-pulse" style={{ justifyContent: i % 2 ? "flex-end" : "flex-start" }}>
+                <div className="w-3/4 space-y-2 rounded-2xl px-4 py-3" style={{ background: "var(--surface-2)" }}>
+                  <div className="h-3 w-11/12 rounded" style={{ background: "var(--border)" }} />
+                  <div className="h-3 w-2/3 rounded" style={{ background: "var(--border)" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {active?.hasMore && (
           <div className="text-center">
             <button
