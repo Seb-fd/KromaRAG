@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useStore, type Role } from "@/lib/store";
 import { clearDevBypass, rolesFromUser } from "@/lib/kroma-token";
@@ -8,8 +8,10 @@ import { Logo } from "./Logo";
 import { Sidebar } from "./Sidebar";
 import { Chat } from "./Chat";
 import { Documents } from "./Documents";
-import { Inspector } from "./Inspector";
 import { Toasts } from "./Toasts";
+
+// Inspector is a rarely-opened drawer: split it out of the initial bundle.
+const Inspector = lazy(() => import("./Inspector").then((m) => ({ default: m.Inspector })));
 
 /** Enterprise shell: sidebar (history/RBAC) + central chat/docs + source inspector. */
 export function AppShell() {
@@ -71,7 +73,9 @@ export function AppShell() {
           </div>
         )}
       </main>
-      <Inspector />
+      <Suspense fallback={null}>
+        <Inspector />
+      </Suspense>
       <Toasts />
     </div>
   );
