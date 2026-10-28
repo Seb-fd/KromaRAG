@@ -50,7 +50,7 @@ export function DevBypassForm() {
       style={{ boxShadow: "var(--shadow)" }}
     >
       <div className="flex flex-col items-center gap-2">
-        <Logo size={44} className="kroma-gradient-ring rounded-2xl" />
+        <Logo size={44} className="avatar-ring rounded-full" />
         <h1 className="font-display text-lg font-semibold tracking-tight">KromaRAG <Badge variant="warning">dev bypass</Badge></h1>
         <p className="text-xs ink-soft">
           Knowledge &amp; Role-Based Vector Architecture

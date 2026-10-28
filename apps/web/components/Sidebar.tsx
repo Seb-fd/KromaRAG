@@ -367,9 +367,18 @@ export function Sidebar() {
           )}
         </div>
         <div className="surface flex flex-col items-center rounded-xl px-3 py-3.5 text-center">
-          <span className="kroma-gradient-ring rounded-full [&_.cl-avatarBox]:size-9">
-            <UserButton />
-          </span>
+          <UserButton
+            appearance={{
+              elements: {
+                avatarBox: {
+                  width: "2.25rem",
+                  height: "2.25rem",
+                  borderRadius: "50%",
+                  boxShadow: "0 0 0 3px rgba(109, 92, 255, 0.35)",
+                },
+              },
+            }}
+          />
           <p
             className="mt-2 w-full truncate text-[13px] font-medium"
             title={email ?? ""}

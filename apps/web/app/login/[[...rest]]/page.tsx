@@ -47,7 +47,7 @@ export default async function LoginPage({
           <div className="pointer-events-none absolute -right-20 -top-20 size-64 rounded-full" style={{ background: "radial-gradient(circle, rgba(179,166,255,0.45), transparent 70%)" }} aria-hidden />
           <div className="pointer-events-none absolute -bottom-24 -left-16 size-72 rounded-full" style={{ background: "radial-gradient(circle, rgba(109,92,255,0.5), transparent 70%)" }} aria-hidden />
           <div className="relative flex items-center gap-3">
-            <Logo size={40} className="rounded-xl" />
+            <Logo size={40} className="rounded-full" />
             <div>
               <p className="font-display text-lg font-semibold tracking-tight text-white">KromaRAG</p>
               <p className="text-xs text-white/70">Knowledge &amp; Role-Based Vector Architecture</p>
@@ -72,7 +72,7 @@ export default async function LoginPage({
         {/* Sign-in panel — centered */}
         <div className="flex flex-col items-center p-7 text-center sm:p-9">
           <div className="mb-5 md:hidden">
-            <Logo size={44} className="kroma-gradient-ring mx-auto rounded-2xl" />
+            <Logo size={44} className="avatar-ring mx-auto rounded-full" />
           </div>
           <h1 className="font-display text-xl font-semibold tracking-tight">
             Welcome to <span className="kroma-gradient-text">KromaRAG</span>

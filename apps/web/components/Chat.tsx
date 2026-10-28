@@ -322,7 +322,7 @@ export function Chat() {
           isSignedIn &&
           !active?.messagesLoading && (
             <div className="anim-fade-up mx-auto max-w-lg pt-10 text-center">
-              <Logo size={52} className="kroma-gradient-ring mx-auto mb-4 rounded-2xl" />
+              <Logo size={52} className="avatar-ring mx-auto mb-4 rounded-full" />
               <h3 className="font-display text-xl font-semibold tracking-tight">
                 Ask across your <span className="kroma-gradient-text">accessible docs</span>
               </h3>
