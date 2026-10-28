@@ -9,6 +9,8 @@ import { safeHref } from "@/lib/safe-url";
 import {
   CITATION_RE,
   buildChunkMap,
+  buildRepeatKeys,
+  citeKey,
   lookupChunk,
   normalizeLegacy,
 } from "@/lib/citations";
@@ -50,8 +52,9 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   );
 }
 
-function CiteBadge({ title, ord, chunk, onOpen }: {
+function CiteBadge({ title, ord, chunk, onOpen, compact }: {
   title: string; ord: number; chunk: SourceChunk | undefined; onOpen: (c: SourceChunk) => void;
+  compact?: boolean;
 }) {
   if (!chunk) {
     // Unresolved citation: muted non-interactive label (never raw [doc:...] markup).
@@ -69,20 +72,23 @@ function CiteBadge({ title, ord, chunk, onOpen }: {
     <button
       onClick={() => onOpen(chunk)}
       title={`Open source: ${chunk.title} (score ${chunk.score.toFixed(2)})`}
+      aria-label={`Open source ${chunk.title}, chunk ${ord}`}
       className="mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-kroma-500/40 bg-kroma-500/10 px-1.5 py-px text-[0.75em] font-semibold text-kroma-600 transition-all hover:bg-kroma-500/25 dark:text-kroma-300"
     >
-      <span aria-hidden>📄</span> {title} [{ord}]
-      <span className="font-normal opacity-70">{chunk.score.toFixed(2)}</span>
+      <span aria-hidden>📄</span> {compact ? `[${ord}]` : <>{title} [{ord}]</>}
+      {!compact && <span className="font-normal opacity-70">{chunk.score.toFixed(2)}</span>}
     </button>
   );
 }
 
-/** Split a plain string into text + CiteBadge nodes. */
+/** Split a plain string into text + CiteBadge nodes. Repeats (per the
+ * precomputed repeat set) render compact: title+score shown once per message. */
 function inlineCites(
   text: string,
   byKey: Map<string, SourceChunk>,
   onOpen: (c: SourceChunk) => void,
-  keyBase: string
+  keyBase: string,
+  repeats: Set<string>
 ): ReactNode[] {
   const out: ReactNode[] = [];
   CITATION_RE.lastIndex = 0;
@@ -100,6 +106,7 @@ function inlineCites(
         ord={ord}
         chunk={lookupChunk(byKey, title, ord)}
         onOpen={onOpen}
+        compact={repeats.has(citeKey(title, ord))}
       />
     );
     last = m.index + m[0].length;
@@ -112,19 +119,23 @@ function inlineCites(
 function withCites(
   children: ReactNode,
   byKey: Map<string, SourceChunk>,
-  onOpen: (c: SourceChunk) => void
+  onOpen: (c: SourceChunk) => void,
+  repeats: Set<string>
 ): ReactNode {
   return Children.toArray(children).flatMap((child, idx) => {
-    if (typeof child === "string") return inlineCites(child, byKey, onOpen, `c${idx}`);
+    if (typeof child === "string") return inlineCites(child, byKey, onOpen, `c${idx}`, repeats);
     return [child];
   });
 }
 
 function makeMdComponents(
   byKey: Map<string, SourceChunk>,
-  onOpen: (c: SourceChunk) => void
+  onOpen: (c: SourceChunk) => void,
+  repeats: Set<string>
 ): Components {
-  const textWrapper = (props: { children?: ReactNode }) => <>{withCites(props.children, byKey, onOpen)}</>;
+  // repeats: keys cited more than once in this message render compact
+  // everywhere; singly-cited keys render full. Precomputed (StrictMode-safe).
+  const textWrapper = (props: { children?: ReactNode }) => <>{withCites(props.children, byKey, onOpen, repeats)}</>;
   return {
     pre(props) {
       const child = Children.toArray(props.children)[0];
@@ -143,32 +154,32 @@ function makeMdComponents(
     a(props) {
       // safe-url allowlist: http/https/mailto/# + relative. Block javascript:/data:/vbscript:.
       const safe = safeHref(props.href);
-      if (!safe) return <span>{withCites(props.children, byKey, onOpen)}</span>;
-      return <a href={safe} target="_blank" rel="noopener noreferrer">{withCites(props.children, byKey, onOpen)}</a>;
+      if (!safe) return <span>{withCites(props.children, byKey, onOpen, repeats)}</span>;
+      return <a href={safe} target="_blank" rel="noopener noreferrer">{withCites(props.children, byKey, onOpen, repeats)}</a>;
     },
     p(props) {
-      return <p>{withCites(props.children, byKey, onOpen)}</p>;
+      return <p>{withCites(props.children, byKey, onOpen, repeats)}</p>;
     },
     li(props) {
-      return <li>{withCites(props.children, byKey, onOpen)}</li>;
+      return <li>{withCites(props.children, byKey, onOpen, repeats)}</li>;
     },
     h1: textWrapper as Components["h1"],
     h2: textWrapper as Components["h2"],
     h3: textWrapper as Components["h3"],
     strong(props) {
-      return <strong>{withCites(props.children, byKey, onOpen)}</strong>;
+      return <strong>{withCites(props.children, byKey, onOpen, repeats)}</strong>;
     },
     em(props) {
-      return <em>{withCites(props.children, byKey, onOpen)}</em>;
+      return <em>{withCites(props.children, byKey, onOpen, repeats)}</em>;
     },
     blockquote(props) {
-      return <blockquote>{withCites(props.children, byKey, onOpen)}</blockquote>;
+      return <blockquote>{withCites(props.children, byKey, onOpen, repeats)}</blockquote>;
     },
     td(props) {
-      return <td>{withCites(props.children, byKey, onOpen)}</td>;
+      return <td>{withCites(props.children, byKey, onOpen, repeats)}</td>;
     },
     th(props) {
-      return <th>{withCites(props.children, byKey, onOpen)}</th>;
+      return <th>{withCites(props.children, byKey, onOpen, repeats)}</th>;
     },
   };
 }
@@ -178,7 +189,8 @@ export const MessageBody = memo(function MessageBody({ content, chunks, onOpenSo
 }) {
   const normalized = useMemo(() => normalizeLegacy(content, chunks), [content, chunks]);
   const byKey = useMemo(() => buildChunkMap(chunks ?? []), [chunks]);
-  const components = useMemo(() => makeMdComponents(byKey, onOpenSource), [byKey, onOpenSource]);
+  const repeats = useMemo(() => buildRepeatKeys(normalized), [normalized]);
+  const components = useMemo(() => makeMdComponents(byKey, onOpenSource, repeats), [byKey, onOpenSource, repeats]);
   return (
     <div className="md-body">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>

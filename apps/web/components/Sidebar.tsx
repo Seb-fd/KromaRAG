@@ -173,7 +173,7 @@ export function Sidebar() {
                     style={{ borderColor: "var(--border)" }}
                   />
                 ) : (
-                  <p className="truncate text-[13px] font-medium">
+                  <p className="truncate text-[13px] font-medium" title={c.title}>
                     {c.title}
                     {c.pending && (
                       <span className="ml-1.5 text-[10px] ink-faint">

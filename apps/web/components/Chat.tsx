@@ -329,7 +329,7 @@ export function Chat() {
                       className="mt-2 flex flex-wrap gap-1.5 border-t pt-2"
                       style={{ borderColor: "var(--border)" }}
                     >
-                      {m.chunks.slice(0, 6).map((c) => (
+                      {[...new Map(m.chunks.map((c) => [c.chunk_id, c])).values()].slice(0, 6).map((c) => (
                         <button
                           key={c.chunk_id}
                           onClick={() => openInspector(c)}
