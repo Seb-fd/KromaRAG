@@ -433,7 +433,9 @@ export function Chat() {
 
       {/* Composer */}
       <div
-        className="glass rounded-2xl p-2.5"
+        id="kroma-composer"
+        tabIndex={-1}
+        className="glass rounded-2xl p-2.5 outline-none"
         style={{ boxShadow: "var(--shadow)" }}
       >
         {offline && (

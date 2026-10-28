@@ -242,18 +242,8 @@ export function Sidebar() {
                   setMainView("chat");
                   void (async () => selectConversation(c.id, await authedJwt()))();
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setMainView("chat");
-                    void (async () => selectConversation(c.id, await authedJwt()))();
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-                aria-current={c.id === activeId}
                 className={cn(
-                  "group cursor-pointer rounded-xl border px-3 py-2 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+                  "group cursor-pointer rounded-xl border px-3 py-2 transition-colors",
                   c.id === activeId
                     ? "border-kroma-500/60 bg-kroma-500/10"
                     : "border-transparent hover:bg-kroma-500/5",
@@ -277,14 +267,24 @@ export function Sidebar() {
                     className="h-7 px-1.5 text-[13px]"
                   />
                 ) : (
-                  <p className="truncate text-[13px] font-medium" title={c.title}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMainView("chat");
+                      void (async () => selectConversation(c.id, await authedJwt()))();
+                    }}
+                    aria-current={c.id === activeId}
+                    title={c.title}
+                    className="block w-full truncate text-left text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded"
+                  >
                     {c.title}
                     {c.pending && (
                       <Badge variant="muted" className="ml-1.5">
                         local
                       </Badge>
                     )}
-                  </p>
+                  </button>
                 )}
                 <p className="tnum mt-0.5 flex items-center justify-between text-xs ink-faint"
                   title={new Date(c.createdAt).toLocaleString()}>
