@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Archive,
   CheckCircle2,
+  FileCode2,
+  FileText,
+  FileType2,
   Loader2,
   Lock,
   RefreshCw,
@@ -70,8 +73,15 @@ function friendlyDocError(e: unknown): string {
 /** Local UI-only job id (module scope: keeps render pure per react-hooks/purity). */
 const newLocalId = () => Math.random().toString(36).slice(2, 9);
 
-function StatusBadge({ status }: { status: DocStatus }) {
-  const busy = status === "pending" || status === "indexing";
+/** Mime glyph for a library row: pdf → doc, markdown → code, else generic. */
+function DocMimeIcon({ mime }: { mime: string }) {
+  const m = mime.toLowerCase();
+  if (m.includes("pdf")) return <FileType2 className="size-4" aria-hidden />;
+  if (m.includes("markdown") || m.includes("text")) return <FileCode2 className="size-4" aria-hidden />;
+  return <FileText className="size-4" aria-hidden />;
+}
+
+function StatusBadge({ status }: { status: DocStatus }) {  const busy = status === "pending" || status === "indexing";
   const variant = status === "indexed" ? "success" : status === "failed" ? "danger" : status === "archived" ? "muted" : "warning";
   return (
     <Badge variant={variant} className="shrink-0 font-mono uppercase">
@@ -474,8 +484,11 @@ export function Documents() {
             const isBusy = busy.has(d.id);
             const inFlight = d.status === "pending" || d.status === "indexing";
             return (
-              <li key={d.id} className="surface rounded-lg px-2.5 py-1.5">
-                <div className="flex items-center gap-2">
+              <li key={d.id} className="surface rounded-xl px-3 py-2 transition-shadow hover:shadow-[0_4px_20px_rgba(109,92,255,0.12)]" style={{ boxShadow: "var(--shadow)" }}>
+                <div className="flex items-center gap-2.5">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-kroma-500/10 text-kroma-500 dark:text-kroma-300" aria-hidden>
+                    <DocMimeIcon mime={d.mime} />
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-xs font-medium">
                       {d.title}
@@ -483,7 +496,7 @@ export function Documents() {
                         <span className="ink-faint ml-1.5 font-normal">· yours</span>
                       )}
                     </p>
-                    <p className="font-mono text-[10px] ink-faint">
+                    <p className="tnum font-mono text-[10px] ink-faint">
                       v{d.version} · {d.chunks} chunks · {d.mime.split("/")[1] ?? d.mime}
                     </p>
                   </div>
