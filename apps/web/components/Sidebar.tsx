@@ -79,6 +79,8 @@ export function Sidebar() {
     <div
       className="glass flex h-full min-h-0 w-80 max-w-[85vw] flex-col md:rounded-none"
       style={{ borderRight: "1px solid var(--border)" }}
+      role="complementary"
+      aria-label="Workspace sidebar"
     >
       {/* Brand */}
       <div

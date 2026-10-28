@@ -60,7 +60,7 @@ export function AppShell() {
       <div className={`z-30 shrink-0 ${sidebarOpen ? "fixed inset-y-0 left-0 md:static" : "hidden"}`}>
         <Sidebar />
       </div>
-      <main className="min-w-0 flex-1 p-2 sm:p-3">
+      <main className="min-w-0 flex-1 p-2 sm:p-3" aria-label="Main panel">
         <div className="mx-auto flex h-full max-w-4xl flex-col" hidden={mainView !== "chat"}>
           <Chat />
         </div>

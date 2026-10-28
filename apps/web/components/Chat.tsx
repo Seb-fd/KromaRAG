@@ -388,6 +388,7 @@ export function Chat() {
             rows={1}
             value={input}
             disabled={streaming}
+            aria-label="Ask KromaRAG"
             onChange={(e) => {
               setInput(e.target.value);
               e.target.style.height = "auto";
@@ -415,6 +416,7 @@ export function Chat() {
             <button
               onClick={() => send()}
               disabled={!input.trim()}
+              title="Send (Enter)"
               className="rounded-xl bg-kroma-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               Send ↑
