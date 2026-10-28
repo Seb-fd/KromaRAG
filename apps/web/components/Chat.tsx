@@ -8,9 +8,11 @@ import {
   PanelLeft,
   RotateCw,
   Send,
+  ShieldCheck,
   Sparkles,
   Square,
   WifiOff,
+  Zap,
 } from "lucide-react";
 import { clerkTemplateMissing, getKromaToken, useKromaSession } from "@/lib/kroma-token";
 import { streamQuery } from "@/lib/api-client";
@@ -239,7 +241,8 @@ export function Chat() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
-      <div className="glass z-10 flex items-center gap-2 rounded-xl px-2 py-2">
+      <div className="glass relative z-10 flex items-center gap-2 rounded-xl px-2 py-2">
+        <span className="pointer-events-none absolute inset-x-4 -bottom-px h-px" style={{ background: "linear-gradient(90deg, transparent, rgba(109,92,255,0.5), transparent)" }} aria-hidden />
         {!sidebarOpen && (
           <Button
             variant="ghost"
@@ -319,22 +322,26 @@ export function Chat() {
           isSignedIn &&
           !active?.messagesLoading && (
             <div className="anim-fade-up mx-auto max-w-lg pt-10 text-center">
-              <Logo size={48} className="mx-auto mb-4 rounded-xl" />
-              <h3 className="text-lg font-semibold tracking-tight">
-                Ask across your accessible docs
+              <Logo size={52} className="kroma-gradient-ring mx-auto mb-4 rounded-2xl" />
+              <h3 className="font-display text-xl font-semibold tracking-tight">
+                Ask across your <span className="kroma-gradient-text">accessible docs</span>
               </h3>
               <p className="mt-1 text-sm ink-soft">
                 Answers cite exact chunks. Click a citation to inspect the
                 source.
               </p>
-              <div className="mt-4 space-y-2">
-                {SUGGESTIONS.map((s) => (
+              <div className="mt-5 grid gap-2 text-left sm:grid-cols-1">
+                {SUGGESTIONS.map((s, i) => (
                   <button
                     key={s}
                     onClick={() => send(s)}
-                    className="surface block w-full rounded-xl px-3 py-2 text-left text-[13px] transition-all hover:border-kroma-500/60 hover:bg-kroma-500/5"
+                    className="surface group flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-[13px] transition-all hover:border-kroma-500/60 hover:bg-kroma-500/5 hover:shadow-[0_4px_20px_rgba(109,92,255,0.15)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                   >
-                    {s}
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-kroma-500/10 text-kroma-500 dark:text-kroma-300">
+                      {i === 0 ? <Sparkles className="size-3.5" aria-hidden /> : i === 1 ? <ShieldCheck className="size-3.5" aria-hidden /> : <Zap className="size-3.5" aria-hidden />}
+                    </span>
+                    <span className="min-w-0 flex-1">{s}</span>
+                    <ArrowUp className="size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" aria-hidden />
                   </button>
                 ))}
               </div>
@@ -349,15 +356,8 @@ export function Chat() {
             }}
           >
             <div
-              className={`max-w-[92%] rounded-2xl px-4 py-3 sm:max-w-[85%] ${m.role === "user" ? "text-white" : "surface"}`}
-              style={
-                m.role === "user"
-                  ? {
-                      background: "var(--user-bubble)",
-                      boxShadow: "var(--shadow)",
-                    }
-                  : { boxShadow: "var(--shadow)" }
-              }
+              className={`max-w-[92%] rounded-2xl px-4 py-3 sm:max-w-[85%] ${m.role === "user" ? "kroma-gradient-btn border border-white/10 text-white" : "surface"}`}
+              style={{ boxShadow: "var(--shadow)" }}
             >
               {m.role === "assistant" ? (
                 <>
@@ -480,12 +480,21 @@ export function Chat() {
               disabled={!input.trim() || offline}
               aria-label={offline ? "API offline" : "Send (Enter)"}
               title={offline ? "API offline" : "Send (Enter)"}
+              className="kroma-gradient-btn border border-white/10"
             >
               <Send aria-hidden />
               Send
             </Button>
           )}
         </div>
+        <p className="mt-1.5 flex items-center justify-between px-1 text-[11px] ink-faint">
+          <span>Enter to send · Shift+Enter for newline</span>
+          {lastFallback ? (
+            <span className="flex items-center gap-1 text-amber-500"><Zap className="size-3" aria-hidden />Groq fallback active</span>
+          ) : (
+            <span className="tnum">RBAC-filtered · top 6</span>
+          )}
+        </p>
       </div>
     </div>
   );
