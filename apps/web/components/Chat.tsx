@@ -7,7 +7,6 @@ import {
   FileSearch,
   Loader2,
   Lock,
-  MessageSquare,
   PanelLeft,
   RotateCw,
   Send,
@@ -27,6 +26,7 @@ import {
 } from "@/lib/store";
 import { MessageBody } from "./Message";
 import { Logo } from "./Logo";
+import { MobileViewSwitcher } from "./MobileViewSwitcher";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Skeleton } from "./ui/skeleton";
@@ -70,8 +70,6 @@ export function Chat() {
     openInspector,
     setSidebarOpen,
     sidebarOpen,
-    mainView,
-    setMainView,
     apiOnline,
   } = useStore();
   const [input, setInput] = useState("");
@@ -259,30 +257,15 @@ export function Chat() {
             >
               <PanelLeft />
             </Button>
-            <div className="flex rounded-lg border border-[var(--border)] p-0.5 md:hidden" role="tablist" aria-label="Main view">
-              {(["chat", "docs"] as const).map((t) => (
-                <Button
-                  key={t}
-                  variant="ghost"
-                  size="xs"
-                  role="tab"
-                  aria-selected={mainView === t}
-                  onClick={() => setMainView(t)}
-                  className={t === mainView ? "bg-kroma-500/15 text-current" : ""}
-                >
-                  {t === "chat" ? <MessageSquare aria-hidden /> : <FileText aria-hidden />}
-                  <span className="capitalize">{t === "chat" ? "Chats" : "Docs"}</span>
-                </Button>
-              ))}
-            </div>
+            <MobileViewSwitcher />
           </>
         )}
         <div className="min-w-0">
           <h2 className="font-display truncate text-[15px] font-semibold tracking-tight">
             {active?.title ?? "KromaRAG"}
           </h2>
-          <p className="tnum flex items-center gap-1 text-[11px] ink-faint">
-            RBAC-filtered hybrid retrieval · SSE streaming
+          <p className="tnum flex min-w-0 items-center gap-1 text-[11px] ink-faint">
+            <span className="truncate max-sm:hidden">RBAC-filtered hybrid retrieval · SSE streaming</span>
             {(active?.messageCount ?? messages.length) > 0 && (
               <span>· {active?.messageCount ?? messages.length} msgs</span>
             )}
@@ -512,17 +495,17 @@ export function Chat() {
               }
             }}
             placeholder="Ask KromaRAG… (Enter to send, Shift+Enter for newline)"
-            className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-[var(--ink-faint)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-lg"
+            className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-base outline-none placeholder:text-[var(--ink-faint)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-lg md:text-sm"
           />
           {streaming ? (
             <Button
               onClick={() => abortRef.current?.abort()}
               aria-label="Stop generating"
               title="Stop generating"
-              className="bg-red-500/90 hover:bg-red-500 hover:opacity-100 text-white"
+              className="bg-red-500/90 hover:bg-red-500 hover:opacity-100 text-white max-sm:px-3"
             >
               <Square aria-hidden />
-              Stop
+              <span className="max-sm:sr-only">Stop</span>
             </Button>
           ) : (
             <Button
@@ -530,15 +513,16 @@ export function Chat() {
               disabled={!input.trim() || offline}
               aria-label={offline ? "API offline" : "Send (Enter)"}
               title={offline ? "API offline" : "Send (Enter)"}
-              className="kroma-gradient-btn border border-white/10"
+              className="kroma-gradient-btn border border-white/10 max-sm:px-3"
             >
               <Send aria-hidden />
-              Send
+              <span className="max-sm:sr-only">Send</span>
             </Button>
           )}
         </div>
         <p className="mt-1.5 flex items-center justify-between px-1 text-[11px] ink-faint">
-          <span>Enter to send · Shift+Enter for newline</span>
+          <span className="max-sm:hidden">Enter to send · Shift+Enter for newline</span>
+          <span className="sm:hidden">Shift+Enter for newline</span>
           {lastFallback ? (
             <span className="flex items-center gap-1 text-amber-500"><Zap className="size-3" aria-hidden />Groq fallback active</span>
           ) : (

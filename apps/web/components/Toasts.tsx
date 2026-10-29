@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 export function Toasts() {
   const { toasts, dismissToast } = useStore();
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-80 flex-col gap-2" role="region" aria-label="Notifications">
+    <div className="pointer-events-none fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 right-4 z-50 flex flex-col gap-2 sm:left-auto sm:w-80" role="region" aria-label="Notifications">
       {toasts.map((t) => (
         <div key={t.id} role={t.kind === "error" ? "alert" : "status"} className={cn(
           "anim-toast glass pointer-events-auto flex items-start gap-2 rounded-xl border px-3 py-2.5 text-[13px]",

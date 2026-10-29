@@ -123,7 +123,7 @@ body::before {
 }
 .tnum { font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) {
-  .anim-fade-up, .anim-drawer, .anim-toast, .cursor-blink, .spinner, .animate-pulse {
+  .anim-fade-up, .anim-drawer, .anim-drawer-left, .anim-toast, .cursor-blink, .spinner, .animate-pulse {
     animation: none !important;
   }
   body { transition: none; }
@@ -146,8 +146,15 @@ body::before {
 @keyframes kroma-spin { to { transform: rotate(360deg); } }
 @keyframes kroma-toast-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 @keyframes kroma-drawer-in { from { opacity: 0; transform: translateX(32px); } to { opacity: 1; transform: none; } }
+@keyframes kroma-drawer-left-in { from { opacity: 0.4; transform: translateX(-24px); } to { opacity: 1; transform: none; } }
 .anim-fade-up { animation: kroma-fade-up 0.25s ease both; }
 .anim-drawer { animation: kroma-drawer-in 0.22s ease both; }
+.anim-drawer-left { animation: kroma-drawer-left-in 0.22s ease both; }
+/* The mobile drawer keeps its slide-in only below md — on desktop the
+   sidebar is a static column, so no enter animation there. */
+@media (min-width: 768px) {
+  .anim-drawer-left { animation: none; }
+}
 .anim-toast { animation: kroma-toast-in 0.22s ease both; }
 .cursor-blink { animation: kroma-blink 1s step-end infinite; }
 .spinner { width: 14px; height: 14px; border-radius: 9999px; border: 2px solid var(--border); border-top-color: var(--accent); animation: kroma-spin 0.7s linear infinite; }
