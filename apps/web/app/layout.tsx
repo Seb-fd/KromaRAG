@@ -8,9 +8,29 @@ const display = Space_Grotesk({ subsets: ["latin"], variable: "--font-display", 
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "KromaRAG — Knowledge & Role-Based Vector Architecture",
-  description: "RAG-enabled Agentic Assistant with RBAC",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://kromarag-staging.vercel.app",
+  ),
+  title: {
+    default: "KromaRAG — Knowledge & Role-Based Vector Architecture",
+    template: "%s · KromaRAG",
+  },
+  description:
+    "Chat over your private docs with grounded answers, citations, and role-based access. Hybrid vector + full-text retrieval, RBAC enforced in SQL.",
   applicationName: "KromaRAG",
+  openGraph: {
+    title: "KromaRAG — Knowledge & Role-Based Vector Architecture",
+    description:
+      "RAG-enabled agentic assistant: grounded answers, [doc:Title:ord] citations, roles enforced in SQL.",
+    type: "website",
+    images: [{ url: "/logo.webp", width: 512, height: 512, alt: "KromaRAG" }],
+  },
+  twitter: {
+    card: "summary",
+    title: "KromaRAG — Knowledge & Role-Based Vector Architecture",
+    description: "Grounded answers over your docs with citations and RBAC.",
+    images: ["/logo.webp"],
+  },
   icons: {
     icon: [{ url: "/logo.webp", type: "image/webp", sizes: "512x512" }],
     shortcut: "/logo.webp",

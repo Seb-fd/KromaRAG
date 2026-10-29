@@ -4,6 +4,8 @@ Production-grade, enterprise-ready **RAG-enabled Agentic Assistant with RBAC**.
 
 > Spec-Driven Development (SDD): [`specs/`](./specs) is the single source of truth. No code without a spec update. Currently 9 specs: `01–05` (core) + `06` (conversations) + `07` (document lifecycle) + `08` (prod hardening) + `09` (telemetry & ops).
 
+[![CI](https://github.com/Seb-fd/KromaRAG/actions/workflows/ci.yml/badge.svg)](https://github.com/Seb-fd/KromaRAG/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](apps/api/pyproject.toml)
 [![Node >=22](https://img.shields.io/badge/node-%3E%3D22-green.svg)](package.json)
 [![FastAPI](https://img.shields.io/badge/backend-FastAPI_0.115-009688.svg)](apps/api/app/main.py)
@@ -13,9 +15,9 @@ Production-grade, enterprise-ready **RAG-enabled Agentic Assistant with RBAC**.
 [![Neon pgvector](https://img.shields.io/badge/db-Neon_pgvector_VECTOR(768)-336791.svg)](apps/api/migrations/001_kroma_schema.sql)
 [![Gemini primary / Groq fallback](https://img.shields.io/badge/LLM-Gemini_%2B_Groq_fallback-purple.svg)](apps/api/app/agent/llm.py)
 [![LangSmith](https://img.shields.io/badge/observability-LangSmith-yellow.svg)](apps/api/app/services/tracing.py)
-[![Cloud Run + Vercel](https://img.shields.io/badge/deploy-Cloud_Run_%2B_Vercel-blue.svg)](apps/api/Dockerfile)
+[![Cloud Run + Vercel](https://img.shields.io/badge/deploy-Docker_%2B_Vercel-blue.svg)](apps/api/Dockerfile)
 [![k6 load](https://img.shields.io/badge/load-k6-orange.svg)](loadtests/k6/query_sse.js)
-[![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg)](package.json)
+[![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg)](LICENSE)
 
 ---
 
@@ -23,14 +25,14 @@ Production-grade, enterprise-ready **RAG-enabled Agentic Assistant with RBAC**.
 
 Chat over your private documents with **grounded answers, citations, and role-based access**. Upload docs → ask questions → get streamed answers with `[doc:Title:ord]` badges that open the exact source chunk. Three roles (`admin > editor > viewer`) enforced in SQL, not just UI.
 
-**Why it's production-shaped:** spec-driven (`specs/` is source of truth, CI-gated), hybrid vector + full-text retrieval, deterministic Gemini → Groq fallback, SSE streaming with trace IDs, LangSmith tracing + Prometheus metrics, 161 backend + 10 frontend tests, 12 required CI jobs (pytest/ruff/mypy/pip-audit/eslint/tsc/vitest/build/audit/docker/gitleaks), reproducible `uv.lock` builds, Docker + Cloud Run/Vercel topology.
+**Why it's production-shaped:** spec-driven (`specs/` is source of truth, CI-gated), hybrid vector + full-text retrieval, deterministic Gemini → Groq fallback, SSE streaming with trace IDs, LangSmith tracing + Prometheus metrics, 166 backend + 28 frontend tests (coverage 75%), 12 required CI jobs (pytest/ruff/mypy/pip-audit/eslint/tsc/vitest/build/audit/docker/gitleaks), reproducible `uv.lock` builds, Docker + staging topology (Render API + Vercel web).
 
 | | |
 |---|---|
-| **Live demo** | TODO — staging deploy pending (`scripts/deploy/smoke.*` + k6 soak first) |
-| **Demo login** | Clerk: try `viewer` (read-only) vs `editor` (upload + ask) vs `admin` (`/metrics`) |
+| **Live demo** | Staging deploys on demand (`scripts/deploy/README.md`): API `https://kromarag-api-staging.onrender.com`, web `https://kromarag-staging.vercel.app` (wake cold start, then smoke: `scripts/deploy/smoke.sh`) |
+| **Demo login** | Clerk Google SSO: `viewer` (read-only) vs `editor` (upload + ask) vs `admin` (delete + `/metrics`); roles in dashboard `publicMetadata.roles` |
 | **Try locally** | Backend `http://localhost:8000/docs`, web `http://localhost:3000` — see [Quickstart](#quickstart--local-development) |
-| **Screenshots** | TODO — add `docs/demo-chat.png`, `docs/demo-documents.png` after staging |
+| **Screenshots** | See [`docs/demo-checklist.md`](docs/demo-checklist.md) — capture chat + documents at 388px and 1280px after staging is green |
 
 Recruiters: start at [2. Architecture](#2-architecture), then [10. Production Hardening](#10-production-hardening--deployment-spec08) for the deploy story.
 
