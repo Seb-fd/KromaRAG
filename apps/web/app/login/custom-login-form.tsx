@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowRight, CircleAlert, Info, Loader2 } from "lucide-react";
-import { useAuth, useSignIn } from "@clerk/nextjs";
+import { ArrowRight, CircleAlert, Info, Loader2, LogOut, RotateCw } from "lucide-react";
+import { useAuth, useClerk, useSignIn, useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 
 /** Official "G" mark (multi-color SVG, not an emoji). */
@@ -31,20 +30,43 @@ function GoogleMark() {
  * on /login/sso-callback, which runs the Future `finalize()` state machine.
  */
 export function CustomLoginForm() {
-  const router = useRouter();
   const { signIn } = useSignIn();
+  const { signOut } = useClerk();
+  const { user } = useUser();
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
 
   const [busyOAuth, setBusyOAuth] = useState(false);
+  const [busyRecovery, setBusyRecovery] = useState(false);
   const [error, setError] = useState("");
+  // Bounce flag: this signed-in branch only ever renders when the server
+  // rejected the session (it server-redirects valid sessions to `/`), so a
+  // return here after an entry attempt means the server bounced us back.
+  // sessionStorage (not state) survives the hard navigation that follows.
+  const bounced =
+    typeof window !== "undefined" &&
+    window.sessionStorage.getItem("kroma-login-bounce") === "1";
 
-  // Navigate home AND refresh server components so Clerk's session cookie
-  // (set by finalize()) is visible to proxy.ts protect() on `/`. Without
-  // refresh() the first push can bounce straight back to /login, looking
-  // like a double login / dropped session.
+  // Hard navigation: a full reload makes the fresh session cookie visible
+  // to proxy.ts protect() on `/`. router.push()+refresh() can soft-bounce
+  // straight back to /login when the cookie isn't server-visible yet,
+  // looking like a dead button.
   function goHome() {
-    router.push("/");
-    router.refresh();
+    try {
+      window.sessionStorage.setItem("kroma-login-bounce", "1");
+    } catch { /* private mode — bounce detection just won't trigger */ }
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate full reload: router.push() soft-nav can bounce back to /login when the fresh cookie isn't server-visible yet
+    window.location.assign("/");
+  }
+
+  async function handleSignOut() {
+    setBusyRecovery(true);
+    try {
+      try { window.sessionStorage.removeItem("kroma-login-bounce"); } catch { /* noop */ }
+      await signOut({ redirectUrl: "/login" });
+    } finally {
+      setBusyRecovery(false);
+      window.location.reload();
+    }
   }
 
   async function handleOAuth() {
@@ -133,6 +155,41 @@ export function CustomLoginForm() {
           </>
         )}
       </Button>
+      {authLoaded && isSignedIn && bounced && (
+        <div
+          role="alert"
+          className="rounded-xl border border-amber-500/50 bg-amber-500/10 px-3 py-2.5 text-xs"
+        >
+          <p className="font-medium">
+            Signed in{user?.primaryEmailAddress?.emailAddress ? ` as ${user.primaryEmailAddress.emailAddress}` : ""} — but
+            the server didn&apos;t recognize the session (often clock skew or a stale cookie).
+          </p>
+          <div className="mt-2 flex gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={goHome}
+              disabled={busyRecovery}
+              className="flex-1"
+            >
+              <RotateCw aria-hidden />
+              Try again
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleSignOut}
+              disabled={busyRecovery}
+              className="flex-1"
+            >
+              <LogOut aria-hidden />
+              Sign out
+            </Button>
+          </div>
+        </div>
+      )}
       <p className="flex items-start justify-center gap-1 text-xs ink-faint">
         <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         New accounts start as viewer — an admin can upgrade you later.

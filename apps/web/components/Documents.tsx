@@ -25,6 +25,7 @@ import { useStore } from "@/lib/store";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
+import { Skeleton } from "./ui/skeleton";
 
 const TERMINAL_STATUSES: DocStatus[] = ["indexed", "failed", "archived"];
 const STATUS_FILTERS: (DocStatus | "all")[] = ["all", "indexed", "indexing", "pending", "failed", "archived"];
@@ -107,6 +108,7 @@ export function Documents() {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [confirmPurgeId, setConfirmPurgeId] = useState<string | null>(null);
+  const [listLoaded, setListLoaded] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(true);
   const pollingRef = useRef<Set<string>>(new Set());
@@ -132,7 +134,10 @@ export function Documents() {
 
   const refresh = useCallback(async () => {
     const jwt = await getKromaToken();
-    if (!jwt) return;
+    if (!jwt) {
+      if (mountedRef.current) setListLoaded(true);
+      return;
+    }
     try {
       const r = await listDocuments(jwt, 30, 0, {
         ...(statusFilter !== "all" ? { status: statusFilter } : { status: "all" as const }),
@@ -145,10 +150,10 @@ export function Documents() {
     } catch (e) {
       if (e instanceof ApiError && (e.status === 404 || e.code === "NOT_FOUND")) {
         if (mountedRef.current) { setDocs([]); setTotal(0); }
-        return;
       }
       /* offline backend — list stays empty, upload errors surface per-job */
     }
+    if (mountedRef.current) setListLoaded(true);
   }, [statusFilter, q]);
 
   // Fetch-on-mount + refetch when filters change. Server list is authoritative.
@@ -392,78 +397,110 @@ export function Documents() {
 
   return (
     <div className="space-y-3">
-      {/* Dropzone */}
-      <div
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
-        onClick={() => canUpload && fileRef.current?.click()}
-        className={`rounded-xl border border-dashed p-4 text-center text-xs transition-all ${dragOver ? "border-kroma-500 bg-kroma-500/10" : ""} ${canUpload ? "cursor-pointer hover:border-kroma-500/60" : "opacity-50"}`}
-        style={{ borderColor: dragOver ? undefined : "var(--border)" }}
-        title={canUpload ? "Drop .txt / .md / .pdf files or click to browse" : "Editors+ only"}>
-        <input ref={fileRef} type="file" multiple accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf"
-          className="hidden" onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = ""; }} />
-        <p className="flex justify-center text-[var(--ink-faint)]"><UploadCloud className="size-5" aria-hidden /></p>
-        <p className="flex items-center justify-center gap-1 font-medium">
-          {canUpload ? "Drop files or browse" : (
-            <>
-              <Lock className="size-3.5" aria-hidden />
-              Editors only (you: {role})
-            </>
-          )}
+      {/* ── Add documents: everything here configures the NEXT upload ── */}
+      <section aria-labelledby="docs-add-heading" className="surface rounded-xl p-3" style={{ boxShadow: "var(--shadow)" }}>
+        <h3 id="docs-add-heading" className="text-[13px] font-semibold tracking-tight">
+          Add documents
+        </h3>
+        <p className="mt-0.5 text-[11px] ink-faint">
+          {canUpload
+            ? ".txt · .md · .pdf · URL · ≤20 MB — answers cite what you add"
+            : `Ingestion needs the editor role (you: ${role}) — the library below is read-only for you`}
         </p>
-        <p className="ink-faint mt-0.5">.txt · .md · .pdf · URL below · ≤{(MAX_UPLOAD_BYTES / 1_048_576).toFixed(0)} MB</p>
-      </div>
-
-      {/* URL ingestion */}
-      <form onSubmit={submitUrl} className="space-y-1.5">
-        <Input value={urlTitle} onChange={(e) => setUrlTitle(e.target.value)} placeholder="Title (optional)" aria-label="Document title (optional)" />
-        <div className="flex gap-1.5">
-          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" aria-label="Document URL" className="min-w-0 flex-1" />
-          <Button type="submit" size="sm" disabled={!canUpload || !url.trim()}>
-            Add
-          </Button>
+        <div className="mt-2.5 space-y-2.5">
+        {/* Dropzone */}
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+          onClick={() => canUpload && fileRef.current?.click()}
+          className={`rounded-xl border border-dashed p-4 text-center text-xs transition-all ${dragOver ? "border-kroma-500 bg-kroma-500/10" : ""} ${canUpload ? "cursor-pointer hover:border-kroma-500/60" : "opacity-50"}`}
+          style={{ borderColor: dragOver ? undefined : "var(--border)" }}
+          title={canUpload ? "Drop .txt / .md / .pdf files or click to browse" : "Editors+ only"}>
+          <input ref={fileRef} type="file" multiple accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf"
+            className="hidden" onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = ""; }} />
+          <p className="flex justify-center text-[var(--ink-faint)]"><UploadCloud className="size-5" aria-hidden /></p>
+          <p className="flex items-center justify-center gap-1 font-medium">
+            {canUpload ? "Drop files or browse" : (
+              <>
+                <Lock className="size-3.5" aria-hidden />
+                Editors only (you: {role})
+              </>
+            )}
+          </p>
+          <p className="ink-faint mt-0.5">.txt · .md · .pdf · URL below · ≤{(MAX_UPLOAD_BYTES / 1_048_576).toFixed(0)} MB</p>
         </div>
-      </form>
 
-      {/* Share roles */}
-      <div className="flex flex-wrap items-center gap-1.5 text-[11px] ink-soft">
-        <span>Visible to:</span>
-        {["viewer", "editor", "admin"].map((r) => (
-          <button key={r} type="button" onClick={() => toggleShare(r)}
-            className={`rounded-md border px-1.5 py-0.5 capitalize max-md:min-h-[36px] max-md:px-3 max-md:text-xs ${shareRoles.includes(r) ? "border-kroma-500/60 bg-kroma-500/10 font-semibold" : "opacity-60"}`}
-            style={{ borderColor: shareRoles.includes(r) ? undefined : "var(--border)" }}>{r}</button>
-        ))}
-      </div>
+        {/* URL ingestion */}
+        <form onSubmit={submitUrl} className="space-y-1.5">
+          <Input value={urlTitle} onChange={(e) => setUrlTitle(e.target.value)} placeholder="Title (optional)" aria-label="Document title (optional)" />
+          <div className="flex gap-1.5">
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" aria-label="Document URL" className="min-w-0 flex-1" />
+            <Button type="submit" size="sm" disabled={!canUpload || !url.trim()}>
+              Add
+            </Button>
+          </div>
+        </form>
 
-      {/* Jobs */}
-      {jobs.length > 0 && (
-        <ul className="space-y-1.5">
-          {jobs.map((j) => (
-            <li key={j.id} className="surface flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs">
-              {(j.state === "reading" || j.state === "uploading" || j.state === "indexing") && <Loader2 className="size-3.5 animate-spin text-kroma-500" aria-hidden />}
-              {j.state === "done" && <CheckCircle2 className="size-3.5 text-emerald-500" aria-hidden />}
-              {j.state === "error" && <XCircle className="size-3.5 text-red-500" aria-hidden />}
-              <span className="min-w-0 flex-1 truncate font-medium">{j.label}</span>
-              <span className="tnum shrink-0 ink-faint">{j.detail}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+        {/* Share roles: who may SEE the next upload (not a library filter) */}
+        <div role="group" aria-labelledby="docs-share-label" className="rounded-lg border border-[var(--border)] p-2.5">
+          <p id="docs-share-label" className="text-[11px] font-semibold">
+            Who can access new uploads
+          </p>
+          <p className="mt-0.5 text-[11px] ink-faint">
+            Applies to files you add above — not to the library below.
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {["viewer", "editor", "admin"].map((r) => (
+              <button key={r} type="button" onClick={() => toggleShare(r)}
+                aria-pressed={shareRoles.includes(r)}
+                className={`rounded-md border px-1.5 py-0.5 capitalize max-md:min-h-[36px] max-md:px-3 max-md:text-xs ${shareRoles.includes(r) ? "border-kroma-500/60 bg-kroma-500/10 font-semibold" : "opacity-60"}`}
+                style={{ borderColor: shareRoles.includes(r) ? undefined : "var(--border)" }}>{r}</button>
+            ))}
+          </div>
+        </div>
 
-      {/* Filters */}
-      <div className="space-y-1.5">
-        <div className="flex flex-wrap items-center gap-1">
-          {STATUS_FILTERS.map((s) => (
-            <button key={s} type="button" onClick={() => setStatusFilter(s)}
-              className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] uppercase max-md:min-h-[36px] max-md:px-3 max-md:text-xs ${statusFilter === s ? "border-kroma-500/60 bg-kroma-500/10 font-semibold" : "opacity-60"}`}
-              style={{ borderColor: statusFilter === s ? undefined : "var(--border)" }}>{s}</button>
-          ))}
+        {/* Jobs: transient upload state lives next to its cause */}
+        {jobs.length > 0 && (
+          <ul className="space-y-1.5" aria-label="Upload progress">
+            {jobs.map((j) => (
+              <li key={j.id} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs" style={{ background: "var(--surface-2)" }}>
+                {(j.state === "reading" || j.state === "uploading" || j.state === "indexing") && <Loader2 className="size-3.5 animate-spin text-kroma-500" aria-hidden />}
+                {j.state === "done" && <CheckCircle2 className="size-3.5 text-emerald-500" aria-hidden />}
+                {j.state === "error" && <XCircle className="size-3.5 text-red-500" aria-hidden />}
+                <span className="min-w-0 flex-1 truncate font-medium">{j.label}</span>
+                <span className="tnum shrink-0 ink-faint">{j.detail}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        </div>
+      </section>
+
+      {/* ── Library: what your roles can already see ── */}
+      <section aria-labelledby="docs-library-heading" className="surface rounded-xl p-3" style={{ boxShadow: "var(--shadow)" }}>
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 id="docs-library-heading" className="text-[13px] font-semibold tracking-tight">
+            Library
+          </h3>
+          <span className="tnum text-[11px] ink-faint" role="status">
+            {listLoaded ? `${total} doc${total === 1 ? "" : "s"}` : "loading…"}
+          </span>
         </div>
         <form
           onSubmit={(e) => { e.preventDefault(); setQ(qDraft); }}
-          className="flex gap-1.5">
+          className="mt-2 flex gap-1.5">
           <Input value={qDraft} onChange={(e) => setQDraft(e.target.value)} placeholder="Filter by title…" aria-label="Filter documents by title" className="min-w-0 flex-1" />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as DocStatus | "all")}
+            aria-label="Filter by indexing status"
+            className="h-9 min-h-[36px] shrink-0 cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 font-mono text-xs uppercase text-[var(--ink)] outline-none transition-colors hover:border-[var(--border-strong)] focus:border-kroma-500"
+          >
+            {STATUS_FILTERS.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
           <Button type="submit" variant="outline" size="sm">Search</Button>
           {q && (
             <Button type="button" variant="ghost" size="sm" onClick={() => { setQ(""); setQDraft(""); }}>
@@ -471,12 +508,22 @@ export function Documents() {
             </Button>
           )}
         </form>
-      </div>
 
-      {/* Document list */}
-      <div>
-        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider ink-faint">Your accessible docs ({total})</p>
-        {docs.length === 0 && <p className="text-[11px] ink-faint">Nothing visible to your roles yet.</p>}
+        <div className="mt-2.5">
+        {!listLoaded ? (
+          <ul className="space-y-1.5" aria-label="Loading documents">
+            {[0, 1, 2].map((i) => (
+              <li key={i} className="rounded-xl border border-[var(--border)] px-3 py-2">
+                <Skeleton className="h-3 w-2/3" />
+                <Skeleton className="mt-1.5 h-2 w-1/3" />
+              </li>
+            ))}
+          </ul>
+        ) : docs.length === 0 ? (
+          <p className="rounded-lg p-3 text-center text-[11px] ink-faint" style={{ background: "var(--surface-2)" }}>
+            Nothing visible to your roles yet — add a document above or adjust the filters.
+          </p>
+        ) : (
         <ul className="slim-scroll space-y-1.5 overflow-y-auto max-md:overflow-visible md:max-h-56">
           {docs.map((d) => {
             const manageable = canManage(d);
@@ -521,8 +568,12 @@ export function Documents() {
                         Archive
                       </Button>
                     </>
+                  ) : purgable ? (
+                    <Badge variant="muted" title="Reindex and archive need the editor role — purge is available because you own this document">
+                      <Lock aria-hidden /> restricted
+                    </Badge>
                   ) : (
-                    <Badge variant="muted" title="Reindex/archive needs owner+editor or admin">
+                    <Badge variant="muted" title="Only the document owner or an admin can manage this document">
                       <Lock aria-hidden /> restricted
                     </Badge>
                   )}
@@ -546,20 +597,20 @@ export function Documents() {
                         Purge
                       </Button>
                     )
-                  ) : (
-                    manageable === false && (
-                      <Badge variant="muted" title="Purge needs owner or admin">
-                        <Lock aria-hidden /> owner only
-                      </Badge>
-                    )
-                  )}
+                  ) : manageable ? (
+                    <Badge variant="muted" title="Purge needs the document owner or an admin">
+                      <Lock aria-hidden /> owner only
+                    </Badge>
+                  ) : null}
                   {inFlight && <span className="ml-auto flex items-center gap-1 text-xs ink-faint"><Loader2 className="size-3 animate-spin" aria-hidden />polling…</span>}
                 </div>
               </li>
             );
           })}
         </ul>
-      </div>
+        )}
+        </div>
+      </section>
     </div>
   );
 }

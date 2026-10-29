@@ -26,7 +26,6 @@ import {
 } from "@/lib/store";
 import { MessageBody } from "./Message";
 import { Logo } from "./Logo";
-import { MobileViewSwitcher } from "./MobileViewSwitcher";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Skeleton } from "./ui/skeleton";
@@ -243,24 +242,21 @@ export function Chat() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Header */}
-      <div className="glass relative z-10 flex items-center gap-2 rounded-xl px-2 py-2">
+      {/* Header — mobile: full-bleed solid strip; md+: floating glass card */}
+      <div className="relative z-10 -mx-2 -mt-2 flex items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 md:mx-0 md:mt-0 md:rounded-xl md:border md:bg-[var(--surface)] md:px-2 md:backdrop-blur-md">
         <span className="pointer-events-none absolute inset-x-4 -bottom-px h-px" style={{ background: "linear-gradient(90deg, transparent, rgba(109,92,255,0.5), transparent)" }} aria-hidden />
         {!sidebarOpen && (
-          <>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open sidebar"
-              title="Open sidebar"
-            >
-              <PanelLeft />
-            </Button>
-            <MobileViewSwitcher />
-          </>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open sidebar"
+            title="Open sidebar"
+          >
+            <PanelLeft />
+          </Button>
         )}
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h2 className="font-display truncate text-[15px] font-semibold tracking-tight">
             {active?.title ?? "KromaRAG"}
           </h2>
@@ -462,12 +458,11 @@ export function Chat() {
         )}
       </div>
 
-      {/* Composer */}
+      {/* Composer — mobile: full-bleed bottom block; md+: floating glass card */}
       <div
         id="kroma-composer"
         tabIndex={-1}
-        className="glass rounded-2xl p-2.5 outline-none transition-shadow focus-within:shadow-[0_0_0_3px_rgba(109,92,255,0.28),var(--shadow)]"
-        style={{ boxShadow: "var(--shadow)" }}
+        className="-mx-2 -mb-2 rounded-none border-0 border-t border-[var(--border)] bg-[var(--surface-solid)] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 outline-none transition-shadow focus-within:shadow-[0_0_12px_rgba(109,92,255,0.35)] md:mx-0 md:mb-0 md:rounded-2xl md:border md:bg-[var(--surface)] md:p-2.5 md:pb-2.5 md:shadow-[var(--shadow)] md:backdrop-blur-md md:focus-within:shadow-[0_0_0_3px_rgba(109,92,255,0.28),var(--shadow)]"
       >
         {offline && (
           <p className="mb-1.5 flex items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-400" role="alert">
@@ -495,14 +490,14 @@ export function Chat() {
               }
             }}
             placeholder="Ask KromaRAG… (Enter to send, Shift+Enter for newline)"
-            className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-base outline-none placeholder:text-[var(--ink-faint)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-lg md:text-sm"
+            className="max-h-40 min-h-[56px] flex-1 resize-none bg-transparent px-2 py-3 text-base outline-none placeholder:text-[var(--ink-faint)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-lg md:min-h-[40px] md:py-2 md:text-sm"
           />
           {streaming ? (
             <Button
               onClick={() => abortRef.current?.abort()}
               aria-label="Stop generating"
               title="Stop generating"
-              className="bg-red-500/90 hover:bg-red-500 hover:opacity-100 text-white max-sm:px-3"
+              className="min-h-[48px] min-w-[48px] justify-center rounded-full !px-0 text-white bg-red-500/90 hover:bg-red-500 hover:opacity-100 md:min-h-0 md:min-w-0 md:rounded-lg md:!px-4"
             >
               <Square aria-hidden />
               <span className="max-sm:sr-only">Stop</span>
@@ -513,14 +508,14 @@ export function Chat() {
               disabled={!input.trim() || offline}
               aria-label={offline ? "API offline" : "Send (Enter)"}
               title={offline ? "API offline" : "Send (Enter)"}
-              className="kroma-gradient-btn border border-white/10 max-sm:px-3"
+              className="kroma-gradient-btn min-h-[48px] min-w-[48px] justify-center rounded-full border border-white/10 !px-0 md:min-h-0 md:min-w-0 md:rounded-lg md:!px-4"
             >
               <Send aria-hidden />
               <span className="max-sm:sr-only">Send</span>
             </Button>
           )}
         </div>
-        <p className="mt-1.5 flex items-center justify-between px-1 text-[11px] ink-faint">
+        <p className="mt-1.5 hidden items-center justify-between px-1 text-[11px] ink-faint sm:flex">
           <span className="max-sm:hidden">Enter to send · Shift+Enter for newline</span>
           <span className="sm:hidden">Shift+Enter for newline</span>
           {lastFallback ? (
