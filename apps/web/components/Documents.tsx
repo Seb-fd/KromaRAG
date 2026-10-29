@@ -427,11 +427,11 @@ export function Documents() {
       </form>
 
       {/* Share roles */}
-      <div className="flex items-center gap-1.5 text-[11px] ink-soft">
+      <div className="flex flex-wrap items-center gap-1.5 text-[11px] ink-soft">
         <span>Visible to:</span>
         {["viewer", "editor", "admin"].map((r) => (
           <button key={r} type="button" onClick={() => toggleShare(r)}
-            className={`rounded-md border px-1.5 py-0.5 capitalize ${shareRoles.includes(r) ? "border-kroma-500/60 bg-kroma-500/10 font-semibold" : "opacity-60"}`}
+            className={`rounded-md border px-1.5 py-0.5 capitalize max-md:min-h-[36px] max-md:px-3 max-md:text-xs ${shareRoles.includes(r) ? "border-kroma-500/60 bg-kroma-500/10 font-semibold" : "opacity-60"}`}
             style={{ borderColor: shareRoles.includes(r) ? undefined : "var(--border)" }}>{r}</button>
         ))}
       </div>
@@ -456,7 +456,7 @@ export function Documents() {
         <div className="flex flex-wrap items-center gap-1">
           {STATUS_FILTERS.map((s) => (
             <button key={s} type="button" onClick={() => setStatusFilter(s)}
-              className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] uppercase ${statusFilter === s ? "border-kroma-500/60 bg-kroma-500/10 font-semibold" : "opacity-60"}`}
+              className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] uppercase max-md:min-h-[36px] max-md:px-3 max-md:text-xs ${statusFilter === s ? "border-kroma-500/60 bg-kroma-500/10 font-semibold" : "opacity-60"}`}
               style={{ borderColor: statusFilter === s ? undefined : "var(--border)" }}>{s}</button>
           ))}
         </div>
@@ -477,7 +477,7 @@ export function Documents() {
       <div>
         <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider ink-faint">Your accessible docs ({total})</p>
         {docs.length === 0 && <p className="text-[11px] ink-faint">Nothing visible to your roles yet.</p>}
-        <ul className="slim-scroll max-h-56 space-y-1.5 overflow-y-auto">
+        <ul className="slim-scroll space-y-1.5 overflow-y-auto max-md:overflow-visible md:max-h-56">
           {docs.map((d) => {
             const manageable = canManage(d);
             const purgable = canPurge(d);
@@ -507,7 +507,7 @@ export function Documents() {
                     {d.error.slice(0, 120)}
                   </p>
                 )}
-                <div className="mt-1.5 flex items-center gap-1">
+                <div className="mt-1.5 flex flex-wrap items-center gap-1">
                   {manageable ? (
                     <>
                       <Button variant="ghost" size="xs" onClick={() => handleReindex(d)} disabled={isBusy || inFlight}
@@ -528,13 +528,13 @@ export function Documents() {
                   )}
                   {purgable ? (
                     confirmPurgeId === d.id ? (
-                      <span className="flex items-center gap-1 rounded-lg border border-red-500/50 bg-red-500/10 px-1.5 py-0.5 text-xs" role="alertdialog" aria-label={`Confirm purge of ${d.title}`}>
-                        <span className="ink-soft">Purge “{d.title.slice(0, 24)}” forever?</span>
-                        <Button variant="ghost" size="xs" onClick={() => confirmPurge(d)} disabled={isBusy}
-                          className="hover:bg-red-500/20 hover:text-red-500 font-semibold">
+                      <span className="flex flex-wrap items-center gap-x-1 gap-y-1.5 rounded-lg border border-red-500/50 bg-red-500/10 px-2 py-1 text-xs" role="alertdialog" aria-label={`Confirm purge of ${d.title}`}>
+                        <span className="ink-soft w-full">Purge “{d.title.slice(0, 24)}” forever?</span>
+                        <Button variant="ghost" size="sm" onClick={() => confirmPurge(d)} disabled={isBusy}
+                          className="min-h-[40px] font-semibold hover:bg-red-500/20 hover:text-red-500">
                           Yes, purge
                         </Button>
-                        <Button variant="ghost" size="xs" onClick={() => setConfirmPurgeId(null)}>
+                        <Button variant="ghost" size="sm" onClick={() => setConfirmPurgeId(null)} className="min-h-[40px]">
                           Keep
                         </Button>
                       </span>

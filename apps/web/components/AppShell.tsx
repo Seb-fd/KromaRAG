@@ -9,6 +9,7 @@ import { Logo } from "./Logo";
 import { Sidebar } from "./Sidebar";
 import { Chat } from "./Chat";
 import { Documents } from "./Documents";
+import { MobileViewSwitcher } from "./MobileViewSwitcher";
 import { Toasts } from "./Toasts";
 
 // Inspector is a rarely-opened drawer: split it out of the initial bundle.
@@ -75,7 +76,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-dvh overflow-hidden">
       <a
         href="#kroma-composer"
         className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-[var(--surface-solid)] focus:px-3 focus:py-1.5 focus:text-sm focus:ring-2 focus:ring-[var(--ring)]"
@@ -83,25 +84,28 @@ export function AppShell() {
         Skip to message composer
       </a>
       {sidebarOpen && (
-        <div className="fixed inset-0 z-20 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 z-20 bg-black/60 md:hidden" onClick={() => setSidebarOpen(false)} aria-hidden />
       )}
-      <div className={`z-30 shrink-0 ${sidebarOpen ? "fixed inset-y-0 left-0 md:static" : "hidden"}`}>
+      <div className={`z-30 shrink-0 ${sidebarOpen ? "anim-drawer-left fixed inset-y-0 left-0 shadow-2xl md:static md:shadow-none" : "hidden"}`}>
         <Sidebar />
       </div>
-      <main className="min-w-0 flex-1 p-2 sm:p-4" aria-label="Main panel">
+      <main className="min-w-0 flex-1 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))]" aria-label="Main panel">
         <div className="mx-auto flex h-full max-w-5xl flex-col" hidden={mainView !== "chat"}>
           <Chat />
         </div>
         {mainView === "docs" && (
           <div className="slim-scroll mx-auto h-full max-w-3xl overflow-y-auto px-1 pb-8">
-            <div className="mb-4 pt-2">
-              <h2 className="font-display flex items-center gap-2 text-lg font-semibold tracking-tight">
-                <FileText className="size-5 text-kroma-500" aria-hidden />
-                Documents
-              </h2>
-              <p className="mt-0.5 text-xs ink-soft">
-                RBAC-filtered — you see only what your roles allow
-              </p>
+            <div className="mb-4 flex items-center gap-2 pt-2">
+              <div className="min-w-0 flex-1">
+                <h2 className="font-display flex items-center gap-2 text-lg font-semibold tracking-tight">
+                  <FileText className="size-5 text-kroma-500" aria-hidden />
+                  Documents
+                </h2>
+                <p className="mt-0.5 text-xs ink-soft">
+                  RBAC-filtered — you see only what your roles allow
+                </p>
+              </div>
+              <MobileViewSwitcher className="shrink-0" />
             </div>
             <Documents />
           </div>

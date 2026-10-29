@@ -99,8 +99,8 @@ export function Sidebar() {
 
   return (
     <div
-      className="glass flex h-full min-h-0 w-80 max-w-[85vw] flex-col md:rounded-none"
-      style={{ borderRight: "1px solid var(--border)" }}
+      className="flex h-full min-h-0 w-80 max-w-[85vw] flex-col border-r md:rounded-none"
+      style={{ background: "var(--surface-solid)", borderColor: "var(--border)" }}
       role="complementary"
       aria-label="Workspace sidebar"
     >
@@ -265,7 +265,7 @@ export function Sidebar() {
                     }}
                     maxLength={120}
                     aria-label="Rename conversation"
-                    className="h-7 px-1.5 text-[13px]"
+                    className="h-7 px-1.5"
                   />
                 ) : (
                   <button
@@ -295,10 +295,11 @@ export function Sidebar() {
                     {c.messagesLoading ? " · loading…" : ""}
                     {c.hasMore ? " · more" : ""}
                   </span>
-                  <span className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
+                  <span className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 max-md:opacity-100">
                     <Button
                       variant="ghost"
                       size="icon-sm"
+                      className="max-md:h-9 max-md:w-9"
                       onClick={(e) => {
                         e.stopPropagation();
                         beginRename(c.id, c.title);
@@ -317,7 +318,7 @@ export function Sidebar() {
                       }}
                       aria-label={`Delete "${c.title}"`}
                       title="Delete"
-                      className="hover:bg-red-500/10 hover:text-red-500"
+                      className="hover:bg-red-500/10 hover:text-red-500 max-md:h-9 max-md:w-9"
                     >
                       <Trash2 />
                     </Button>
@@ -328,9 +329,10 @@ export function Sidebar() {
           </div>
       </div>
 
-      {/* Profile block — centered identity, quiet status */}
+      {/* Profile block — centered identity, quiet status.
+          Safe-area padded so sign-out stays reachable above the home indicator. */}
       <div
-        className="space-y-2.5 border-t border-[var(--border)] p-3"
+        className="space-y-2.5 border-t border-[var(--border)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       >
         <div className="flex items-center justify-center gap-1.5 text-xs ink-faint" role="status">
           {apiOnline == null ? (
