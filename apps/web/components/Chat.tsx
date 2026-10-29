@@ -26,7 +26,6 @@ import {
 } from "@/lib/store";
 import { MessageBody } from "./Message";
 import { Logo } from "./Logo";
-import { MobileViewSwitcher } from "./MobileViewSwitcher";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Skeleton } from "./ui/skeleton";
@@ -247,18 +246,15 @@ export function Chat() {
       <div className="glass relative z-10 flex items-center gap-2 rounded-xl px-2 py-2">
         <span className="pointer-events-none absolute inset-x-4 -bottom-px h-px" style={{ background: "linear-gradient(90deg, transparent, rgba(109,92,255,0.5), transparent)" }} aria-hidden />
         {!sidebarOpen && (
-          <>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open sidebar"
-              title="Open sidebar"
-            >
-              <PanelLeft />
-            </Button>
-            <MobileViewSwitcher />
-          </>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open sidebar"
+            title="Open sidebar"
+          >
+            <PanelLeft />
+          </Button>
         )}
         <div className="min-w-0">
           <h2 className="font-display truncate text-[15px] font-semibold tracking-tight">

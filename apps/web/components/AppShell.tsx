@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, lazy, useEffect } from "react";
-import { FileText } from "lucide-react";
+import { FileText, PanelLeft } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { useStore, type Role } from "@/lib/store";
 import { clearDevBypass, devBypassActive, getDevBypassIdentity, rolesFromUser } from "@/lib/kroma-token";
@@ -9,7 +9,7 @@ import { Logo } from "./Logo";
 import { Sidebar } from "./Sidebar";
 import { Chat } from "./Chat";
 import { Documents } from "./Documents";
-import { MobileViewSwitcher } from "./MobileViewSwitcher";
+import { Button } from "./ui/button";
 import { Toasts } from "./Toasts";
 
 // Inspector is a rarely-opened drawer: split it out of the initial bundle.
@@ -96,6 +96,18 @@ export function AppShell() {
         {mainView === "docs" && (
           <div className="slim-scroll mx-auto h-full max-w-3xl overflow-y-auto px-1 pb-8">
             <div className="mb-4 flex items-center gap-2 pt-2">
+              {!sidebarOpen && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSidebarOpen(true)}
+                  aria-label="Open sidebar"
+                  title="Open sidebar"
+                  className="shrink-0 md:hidden"
+                >
+                  <PanelLeft />
+                </Button>
+              )}
               <div className="min-w-0 flex-1">
                 <h2 className="font-display flex items-center gap-2 text-lg font-semibold tracking-tight">
                   <FileText className="size-5 text-kroma-500" aria-hidden />
@@ -105,7 +117,6 @@ export function AppShell() {
                   RBAC-filtered — you see only what your roles allow
                 </p>
               </div>
-              <MobileViewSwitcher className="shrink-0" />
             </div>
             <Documents />
           </div>
