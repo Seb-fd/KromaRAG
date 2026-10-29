@@ -32,4 +32,4 @@ k6 run loadtests/k6/soak.js
 
 ## Threshold output
 
-Attach `--summary-export` JSON + Prometheus screenshots (p95 first-token / vector search / upload accept, fallback %, pool saturation) to release notes per `09` exit gates.
+Attach `--summary-export` JSON + Prometheus panel exports (p95 first-token / vector search / upload accept, fallback %, pool saturation) to release notes per `09` exit gates.

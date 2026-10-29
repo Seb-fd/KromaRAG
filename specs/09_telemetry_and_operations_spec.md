@@ -359,7 +359,7 @@ Feature: Telemetry & Operations
 - `uv run pytest -q` green — inherited suite + new `tests/test_telemetry_ops.py` (traceparent join/mint matrix, `done.traceparent` echo, `/metrics` 404-vs-401-vs-403-vs-200 matrix, exemplar presence, cardinality-shed, pool-exhaust `503` + `readyz` split, single-attempt fallback counter increments).
 - `npm run build --workspace apps/web` green (traceparent forward on status/messages polls, additive only); `docker build -f apps/api/Dockerfile apps/api` green with `prometheus-client` (or OTel exporter) pinned in `pyproject.toml`; `trivy image --severity HIGH,CRITICAL` = 0.
 - `npm run spec:check` green across **9 specs** (this file additive; `02` SSE framing, `06`/`07` `404`-oracle, `08` timeout/fallback/health semantics untouched — deltas indexed below).
-- Staging evidence green: k6 `query_sse.js` + `upload_burst.js` threshold output attached to release notes; 30-min `soak.js` with zero `readyz` flaps; Prometheus scrape (15s interval, 24h) with p95 panels (query first-token, vector search, upload accept) + fallback-rate + pool-saturation dashboards screenshotted.
+- Staging evidence green: k6 `query_sse.js` + `upload_burst.js` threshold output attached to release notes; 30-min `soak.js` with zero `readyz` flaps; Prometheus scrape (15s interval, 24h) with p95 panels (query first-token, vector search, upload accept) + fallback-rate + pool-saturation dashboard exports attached.
 - Manual: `curl -i` header audit (`X-Trace-Id` + `traceparent` on `200/401/403/404/429/503`); scrape-body PII grep (`@`, `eyJ`, `doc_`) zero hits; `docker logs` DSN-scrub grep (`://.*@` → zero hits); chaos-flag-in-prod boot rejection demonstrated (`chaos_enabled_in_production`).
 
 ---

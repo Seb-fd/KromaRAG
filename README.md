@@ -32,7 +32,6 @@ Chat over your private documents with **grounded answers, citations, and role-ba
 | **Live demo** | `https://kroma-rag.vercel.app` (API `https://kromarag-api-staging.onrender.com` — wake cold start, then smoke: `scripts/deploy/smoke.sh`) |
 | **Demo login** | Clerk Google SSO: `viewer` (read-only) vs `editor` (upload + ask) vs `admin` (delete + `/metrics`); roles in dashboard `publicMetadata.roles` |
 | **Try locally** | Backend `http://localhost:8000/docs`, web `http://localhost:3000` — see [Quickstart](#quickstart--local-development) |
-| **Screenshots** | See [`docs/demo-checklist.md`](docs/demo-checklist.md) — capture chat + documents at 388px and 1280px after staging is green |
 
 Recruiters: start at [2. Architecture](#2-architecture), then [10. Production Hardening](#10-production-hardening--deployment-spec08) for the deploy story.
 
@@ -638,7 +637,7 @@ Chunking (specs/03 §2, `app/rag/chunker.py`): recursive semantic split, target 
 - `/metrics` Prometheus catalogue (18 families, §11): HTTP RED, tokens, fallback rate, `vector_search_duration_seconds` (p95 `<400ms`), pool gauges, SSE lifetimes, `doc_reindex/purge` counters. Scrape every 15s (admin JWT, allowlisted IP).
 - SSE `done.usage` carries `{prompt_tokens, completion_tokens, model}` + `history_tokens`; per-request cost logged to `kroma_usage` (Phase 2 table) + stdout JSON. Cost table (`app/core/costs.py`, indicative per 1M, pin quarterly): `gemini-3.6-flash $1.50/$7.50`, `openai/gpt-oss-120b $0.15/$0.60`, `gemini-embedding-001 $0.02/1M tokens`, legacy `gemini-2.0-flash $0.10/$0.40`, `llama-3.3-70b-versatile $0.59/$0.79`, `text-embedding-004 $0.02`. Alert if p95 cost/query > $0.02 or fallback rate > 15% (10min).
 - Structured JSON logs (`trace_id`, `span_id`, `traceparent`, `route`, `sub_hash`, `latency_ms`, `pool_wait_ms`, `model`, `fallback_used`); `ERROR` on fallback, 5xx, RBAC-deny bursts, pool exhaust. Non-functionals: p95 first-token < 2.5s (Groq fallback < 1.5s incremental), p95 retrieval < 400ms, history load < 150ms, `GET /documents` < 250ms, `GET status` < 100ms, `healthz` < 50ms, `readyz` < 300ms.
-- k6 SLO evidence: `query_sse` + `upload_burst` thresholds green before traffic shift; 30-min `soak` with zero `readyz` flaps; dashboards (latency p50/p95/p99, fallback %, pool wait, `429` by bucket) screenshotted into release notes.
+- k6 SLO evidence: `query_sse` + `upload_burst` thresholds green before traffic shift; 30-min `soak` with zero `readyz` flaps; dashboards (latency p50/p95/p99, fallback %, pool wait, `429` by bucket) attached to release notes.
 
 ---
 
