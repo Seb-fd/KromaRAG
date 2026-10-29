@@ -29,7 +29,7 @@ Chat over your private documents with **grounded answers, citations, and role-ba
 
 | | |
 |---|---|
-| **Live demo** | Staging deploys on demand (`scripts/deploy/README.md`): API `https://kromarag-api-staging.onrender.com`, web `https://kromarag-staging.vercel.app` (wake cold start, then smoke: `scripts/deploy/smoke.sh`) |
+| **Live demo** | `https://kroma-rag.vercel.app` (API `https://kromarag-api-staging.onrender.com` — wake cold start, then smoke: `scripts/deploy/smoke.sh`) |
 | **Demo login** | Clerk Google SSO: `viewer` (read-only) vs `editor` (upload + ask) vs `admin` (delete + `/metrics`); roles in dashboard `publicMetadata.roles` |
 | **Try locally** | Backend `http://localhost:8000/docs`, web `http://localhost:3000` — see [Quickstart](#quickstart--local-development) |
 | **Screenshots** | See [`docs/demo-checklist.md`](docs/demo-checklist.md) — capture chat + documents at 388px and 1280px after staging is green |

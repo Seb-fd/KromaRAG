@@ -9,7 +9,7 @@ const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-geist-mono",
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? "https://kromarag-staging.vercel.app",
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://kroma-rag.vercel.app",
   ),
   title: {
     default: "KromaRAG — Knowledge & Role-Based Vector Architecture",

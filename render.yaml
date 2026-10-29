@@ -50,7 +50,7 @@ services:
       - key: JWT_AUDIENCE
         value: kromarag-web
       - key: CORS_ORIGINS
-        value: https://kromarag-staging.vercel.app
+        value: https://kroma-rag.vercel.app
       - key: LANGCHAIN_TRACING_V2
         value: true
       - key: LANGCHAIN_PROJECT

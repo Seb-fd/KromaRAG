@@ -1,7 +1,8 @@
 # Demo capture checklist (portfolio screenshots)
 
-Staging must be green first: `scripts/deploy/smoke.sh` (or `.ps1`), then
-the k6 thresholds in `loadtests/k6/README.md`. Capture as the debug admin.
+Live: `https://kroma-rag.vercel.app` (API `https://kromarag-api-staging.onrender.com`).
+If cold, wake the API first, then run `scripts/deploy/smoke.sh` (or `.ps1`).
+Capture as the debug admin.
 
 ## Shots
 
