@@ -95,7 +95,7 @@ export function AppShell() {
         </div>
         {mainView === "docs" && (
           <div className="slim-scroll mx-auto h-full max-w-3xl overflow-y-auto px-1 pb-8">
-            <div className="mb-4 flex items-center gap-2 pt-2">
+            <div className="-mx-1 mb-3 flex items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-solid)] px-2 py-2 md:mx-0 md:border-0 md:bg-transparent md:px-0">
               {!sidebarOpen && (
                 <Button
                   variant="ghost"
