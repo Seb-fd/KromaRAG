@@ -462,7 +462,7 @@ export function Chat() {
       <div
         id="kroma-composer"
         tabIndex={-1}
-        className="-mx-2 -mb-2 rounded-none border-0 border-t border-[var(--border)] bg-[var(--surface-solid)] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5 outline-none transition-shadow focus-within:shadow-[0_0_12px_rgba(109,92,255,0.35)] md:mx-0 md:mb-0 md:rounded-2xl md:border md:bg-[var(--surface)] md:p-2.5 md:pb-2.5 md:shadow-[var(--shadow)] md:backdrop-blur-md md:focus-within:shadow-[0_0_0_3px_rgba(109,92,255,0.28),var(--shadow)]"
+        className="-mx-2 -mb-2 rounded-none border-0 border-t border-[var(--border)] bg-[var(--surface-solid)] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 outline-none transition-shadow focus-within:shadow-[0_0_12px_rgba(109,92,255,0.35)] md:mx-0 md:mb-0 md:rounded-2xl md:border md:bg-[var(--surface)] md:p-2.5 md:pb-2.5 md:shadow-[var(--shadow)] md:backdrop-blur-md md:focus-within:shadow-[0_0_0_3px_rgba(109,92,255,0.28),var(--shadow)]"
       >
         {offline && (
           <p className="mb-1.5 flex items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-400" role="alert">
@@ -490,14 +490,14 @@ export function Chat() {
               }
             }}
             placeholder="Ask KromaRAG… (Enter to send, Shift+Enter for newline)"
-            className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-base outline-none placeholder:text-[var(--ink-faint)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-lg md:text-sm"
+            className="max-h-40 min-h-[56px] flex-1 resize-none bg-transparent px-2 py-3 text-base outline-none placeholder:text-[var(--ink-faint)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-lg md:min-h-[40px] md:py-2 md:text-sm"
           />
           {streaming ? (
             <Button
               onClick={() => abortRef.current?.abort()}
               aria-label="Stop generating"
               title="Stop generating"
-              className="min-h-[40px] min-w-[40px] justify-center rounded-full !px-0 text-white bg-red-500/90 hover:bg-red-500 hover:opacity-100 md:min-h-0 md:min-w-0 md:rounded-lg md:!px-4"
+              className="min-h-[48px] min-w-[48px] justify-center rounded-full !px-0 text-white bg-red-500/90 hover:bg-red-500 hover:opacity-100 md:min-h-0 md:min-w-0 md:rounded-lg md:!px-4"
             >
               <Square aria-hidden />
               <span className="max-sm:sr-only">Stop</span>
@@ -508,7 +508,7 @@ export function Chat() {
               disabled={!input.trim() || offline}
               aria-label={offline ? "API offline" : "Send (Enter)"}
               title={offline ? "API offline" : "Send (Enter)"}
-              className="kroma-gradient-btn min-h-[40px] min-w-[40px] justify-center rounded-full border border-white/10 !px-0 md:min-h-0 md:min-w-0 md:rounded-lg md:!px-4"
+              className="kroma-gradient-btn min-h-[48px] min-w-[48px] justify-center rounded-full border border-white/10 !px-0 md:min-h-0 md:min-w-0 md:rounded-lg md:!px-4"
             >
               <Send aria-hidden />
               <span className="max-sm:sr-only">Send</span>
